@@ -13,5 +13,23 @@ namespace FactionTactics.Squad
         public SquadOrder? CurrentOrder { get; set; }
         public DoctrineOrderKind? PreviousOrderKind { get; set; }
         public float AgeSeconds { get; set; }
+
+        /// <summary>Highest alive/roster count tracked for this cluster (diagnostics / tests).</summary>
+        public int PeakAlive { get; set; }
+
+        /// <summary>Last-tick casualty proxy from PeakAlive (diagnostics / tests).</summary>
+        public float LastCasualtyRatio { get; set; }
+
+        /// <summary>Last-tick broken-line proxy (diagnostics / tests).</summary>
+        public bool LastIsBroken { get; set; }
+
+        /// <summary>
+        /// Offline/sim hook: when set, AssessThreats uses these instead of world scans
+        /// so anxiety/retreat branches can fire without VALHEIM_REFS.
+        /// </summary>
+        public int? DebugThreatCount { get; set; }
+
+        /// <summary>Offline/sim hook for nearest threat distance (meters).</summary>
+        public float? DebugNearestThreatDistance { get; set; }
     }
 }

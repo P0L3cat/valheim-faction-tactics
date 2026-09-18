@@ -1,36 +1,48 @@
+using System;
 using System.Collections.Generic;
 using FactionTactics.Commander;
 using FactionTactics.Config;
 using FactionTactics.Doctrine;
 using FactionTactics.Orders;
+using FactionTactics.Siege;
 using UnityEngine;
 
 namespace FactionTactics.Squad
 {
     /// <summary>
-    /// Route 1 orchestrator: discover → min-size gate → roles → commander propose → apply.
-    /// Consults Route 2 scorers before committing (NullScorer = no-op).
-    /// Enriches ThreatAssessment with TrollFortress + environment heuristics (IndoorsOrCrypt,
-    /// NearStructure, NearDvergr) for doctrine B/C biases.
+    /// Route 1 orchestrator: discover → merge persisted FSM state → min-size gate →
+    /// roles → commander propose → apply. Consults Route 2 scorers before committing
+    /// (NullScorer = no-op). Enriches ThreatAssessment with TrollFortress + environment
+    /// heuristics and Siege Assault workbench proximity.
     /// </summary>
     public sealed class SquadDirector
     {
-        private readonly SquadDiscovery _discovery;
+        /// <summary>Hard-break casualty ratio when doctrine-specific thresholds are not consulted.</summary>
+        public const float BrokenCasualtyThreshold = 0.5f;
+
+        /// <summary>Drop runtime keys after this many ticks without a matching cluster.</summary>
+        public const int RuntimePruneTicks = 8;
+
+        private readonly ISquadDiscovery _discovery;
         private readonly ICommander _commander;
         private readonly DoctrinePackRegistry _registry;
         private readonly IRoleScorer _roleScorer;
         private readonly IActionScorer _actionScorer;
         private readonly OrderApplicator _applicator;
+        private readonly SiegeDirector _siege;
 
         private readonly List<SquadUnit> _active = new List<SquadUnit>();
+        private readonly List<SquadRuntimeState> _runtime = new List<SquadRuntimeState>();
+        private int _nextStableSerial;
 
         public SquadDirector(
-            SquadDiscovery discovery,
+            ISquadDiscovery discovery,
             ICommander commander,
             DoctrinePackRegistry registry,
             IRoleScorer roleScorer,
             IActionScorer actionScorer,
-            OrderApplicator applicator)
+            OrderApplicator applicator,
+            SiegeDirector? siege = null)
         {
             _discovery = discovery;
             _commander = commander;
@@ -38,33 +50,60 @@ namespace FactionTactics.Squad
             _roleScorer = roleScorer;
             _actionScorer = actionScorer;
             _applicator = applicator;
+            _siege = siege ?? new SiegeDirector();
         }
 
         public IReadOnlyList<SquadUnit> ActiveSquads => _active;
+
+        /// <summary>Test/diagnostics: currently tracked runtime FSM states.</summary>
+        public IReadOnlyList<SquadRuntimeState> RuntimeStates => _runtime;
 
         public void Tick(float dt)
         {
             _active.Clear();
             var discovered = _discovery.Discover();
-            var minSize = PluginConfig.MinSquadSize.Value;
+            var minSize = PluginConfig.MinSquadSize?.Value ?? 3;
+            var seen = new HashSet<SquadRuntimeState>();
 
             foreach (var squad in discovered)
             {
-                squad.AgeSeconds += dt;
+                var state = MatchOrCreateRuntime(squad);
+                seen.Add(state);
+                state.TicksUnseen = 0;
 
-                if (squad.Members.Count < minSize)
+                ApplyRuntimeToSquad(squad, state, dt);
+
+                var alive = CountAlive(squad);
+                var roster = squad.Members.Count;
+                state.PeakAlive = Math.Max(state.PeakAlive, Math.Max(alive, roster));
+                if (state.PeakAlive >= minSize)
+                    state.EverMetMinSize = true;
+
+                // Refresh member set for next-tick overlap matching (include dead roster entries).
+                state.MemberIds.Clear();
+                foreach (var m in squad.Members)
+                    state.MemberIds.Add(m.InstanceId);
+
+                squad.PeakAlive = state.PeakAlive;
+
+                if (alive < minSize)
                 {
-                    if (PluginConfig.DebugLogging.Value)
-                        Plugin.Log.LogDebug($"Squad {squad.SquadId} below min size ({squad.Members.Count}/{minSize}) — vanilla AI.");
+                    // Still record casualties for diagnostics when the cluster is collapsing.
+                    var (ratio, broken) = ComputeCasualties(alive, state, minSize);
+                    squad.LastCasualtyRatio = ratio;
+                    squad.LastIsBroken = broken;
+                    if (PluginConfig.DebugLogging?.Value == true)
+                        Plugin.Log?.LogDebug($"Squad {squad.SquadId} below min size ({alive}/{minSize}, roster={roster}) — vanilla AI.");
                     continue;
                 }
 
                 RefineRolesWithScorer(squad);
-                var threats = AssessThreats(squad);
+                var threats = AssessThreats(squad, state, minSize);
+                squad.LastCasualtyRatio = threats.CasualtyRatio;
+                squad.LastIsBroken = threats.IsBroken;
+
                 var snapshot = SquadSnapshot.FromSquad(squad, threats);
 
-                // Route 2: action scorer can bias which order ScriptedCommander already chose;
-                // commander remains source of SquadOrder DTO (Route 3 contract).
                 var order = _commander.Propose(snapshot);
                 if (order == null)
                     continue;
@@ -72,31 +111,94 @@ namespace FactionTactics.Squad
                 order = MaybeRescoreOrder(order, snapshot);
                 squad.CurrentOrder = order;
                 squad.PreviousOrderKind = order.OrderKind;
+                state.PreviousOrderKind = order.OrderKind;
                 _applicator.Apply(squad, order);
                 _active.Add(squad);
 
-                if (PluginConfig.DebugLogging.Value)
+                if (PluginConfig.DebugLogging?.Value == true)
                 {
-                    Plugin.Log.LogInfo(
-                        $"[{squad.Doctrine.DisplayName}] {squad.SquadId} n={squad.Members.Count} → {order.OrderKind} ({order.Formation}/{order.Stance})");
+                    var assaultTag = snapshot.AssaultActive
+                        ? (snapshot.PlayersNearAssault ? " Assault/hot" : " Assault/quiet")
+                        : "";
+                    Plugin.Log?.LogInfo(
+                        $"[{squad.Doctrine.DisplayName}]{assaultTag} {squad.SquadId} n={alive} peak={state.PeakAlive} cas={threats.CasualtyRatio:0.00} → {order.OrderKind} ({order.Formation}/{order.Stance})");
                 }
             }
 
+            PruneUnseenRuntime(seen);
             _ = _registry;
+        }
+
+        private SquadRuntimeState MatchOrCreateRuntime(SquadUnit squad)
+        {
+            var doctrineId = squad.Doctrine?.Id ?? "";
+            SquadRuntimeState? best = null;
+            var bestOverlap = 0;
+            foreach (var candidate in _runtime)
+            {
+                if (!string.Equals(candidate.DoctrineId, doctrineId, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                var overlap = SquadIdentity.Overlap(candidate, squad.Members);
+                if (overlap <= 0)
+                    continue;
+                // Prefer the strongest overlap; require at least one shared member.
+                if (overlap > bestOverlap)
+                {
+                    bestOverlap = overlap;
+                    best = candidate;
+                }
+            }
+
+            // Accept match if we share any members (casualties shrink the set; survivors keep the chain).
+            if (best != null)
+                return best;
+
+            var state = new SquadRuntimeState
+            {
+                StableId = $"{doctrineId}#{++_nextStableSerial}",
+                DoctrineId = doctrineId,
+            };
+            _runtime.Add(state);
+            return state;
+        }
+
+        private static void ApplyRuntimeToSquad(SquadUnit squad, SquadRuntimeState state, float dt)
+        {
+            state.AgeSeconds += dt;
+            squad.AgeSeconds = state.AgeSeconds;
+            squad.PreviousOrderKind = state.PreviousOrderKind;
+            squad.SquadId = state.StableId;
+            squad.PeakAlive = state.PeakAlive;
+        }
+
+        private void PruneUnseenRuntime(HashSet<SquadRuntimeState> seen)
+        {
+            for (int i = _runtime.Count - 1; i >= 0; i--)
+            {
+                var state = _runtime[i];
+                if (seen.Contains(state))
+                    continue;
+                state.TicksUnseen++;
+                if (state.TicksUnseen >= RuntimePruneTicks)
+                    _runtime.RemoveAt(i);
+            }
         }
 
         private void RefineRolesWithScorer(SquadUnit squad)
         {
             // NullRoleScorer returns 0 for all → keep doctrine assignment.
             // Non-null scorers: pick max score among doctrine-legal roles.
-            var threats = AssessThreats(squad);
+            // Use a lightweight assessment without mutating PeakAlive twice.
+            var minSize = PluginConfig.MinSquadSize?.Value ?? 3;
+            var state = FindRuntime(squad.SquadId);
+            var threats = AssessThreats(squad, state, minSize);
             var snapshot = SquadSnapshot.FromSquad(squad, threats);
 
             foreach (var member in squad.Members)
             {
                 var best = member.AssignedRole;
                 var bestScore = _roleScorer.ScoreRole(member, best, snapshot);
-                foreach (SquadRole role in System.Enum.GetValues(typeof(SquadRole)))
+                foreach (SquadRole role in Enum.GetValues(typeof(SquadRole)))
                 {
                     if (role == SquadRole.Unassigned)
                         continue;
@@ -113,6 +215,16 @@ namespace FactionTactics.Squad
             }
         }
 
+        private SquadRuntimeState? FindRuntime(string stableId)
+        {
+            foreach (var s in _runtime)
+            {
+                if (s.StableId == stableId)
+                    return s;
+            }
+            return null;
+        }
+
         private SquadOrder MaybeRescoreOrder(SquadOrder order, SquadSnapshot snapshot)
         {
             var currentScore = _actionScorer.ScoreAction(order.OrderKind, snapshot);
@@ -121,7 +233,7 @@ namespace FactionTactics.Squad
 
             DoctrineOrderKind best = order.OrderKind;
             float bestScore = currentScore;
-            foreach (DoctrineOrderKind kind in System.Enum.GetValues(typeof(DoctrineOrderKind)))
+            foreach (DoctrineOrderKind kind in Enum.GetValues(typeof(DoctrineOrderKind)))
             {
                 var score = _actionScorer.ScoreAction(kind, snapshot);
                 if (score > bestScore)
@@ -140,9 +252,8 @@ namespace FactionTactics.Squad
             return order;
         }
 
-        private static ThreatAssessment AssessThreats(SquadUnit squad)
+        private ThreatAssessment AssessThreats(SquadUnit squad, SquadRuntimeState? state, int minSize)
         {
-            // v0: lightweight heuristics. VALHEIM_REFS path can inspect MonsterAI targets later.
             var assessment = new ThreatAssessment
             {
                 ThreatCount = 0,
@@ -159,18 +270,27 @@ namespace FactionTactics.Squad
                 NearStructure = false,
                 NearbyDvergrCount = 0,
                 NearDvergr = false,
+                NearWorkbench = false,
+                NearestWorkbenchDistance = float.MaxValue,
+                PlayersNearAssault = false,
+                AssaultActive = false,
             };
+
+            var alive = CountAlive(squad);
+            var (casualtyRatio, isBroken) = ComputeCasualties(alive, state, minSize);
+            assessment.CasualtyRatio = casualtyRatio;
+            assessment.IsBroken = isBroken;
 
 #if VALHEIM_REFS
             int engaged = 0;
             float nearest = float.MaxValue;
             Vector3 centroid = Vector3.zero;
-            int alive = 0;
+            int alivePos = 0;
             foreach (var m in squad.Members)
             {
                 if (!m.IsAlive)
                     continue;
-                alive++;
+                alivePos++;
                 centroid += m.Position;
                 if (m.NativeHandle is MonsterAI ai)
                 {
@@ -182,39 +302,87 @@ namespace FactionTactics.Squad
                         if (d < nearest)
                             nearest = d;
 
-                        // Brute commit proxies: low health / stagger when APIs exist.
                         TryThreatConditionFlags(target, assessment);
                     }
                 }
             }
 
-            if (alive > 0)
-                centroid = new Vector3(centroid.x / alive, centroid.y / alive, centroid.z / alive);
+            if (alivePos > 0)
+                centroid = new Vector3(centroid.x / alivePos, centroid.y / alivePos, centroid.z / alivePos);
 
-            assessment.ThreatCount = engaged > 0 ? System.Math.Max(1, engaged / System.Math.Max(1, alive)) : 0;
-            // Prefer counting distinct engagement: at least one engaged player-side threat.
+            assessment.ThreatCount = engaged > 0 ? Math.Max(1, engaged / Math.Max(1, alivePos)) : 0;
             if (engaged > 0)
                 assessment.ThreatCount = 1;
             assessment.NearestDistance = nearest;
             assessment.MissileThreatened = engaged > 0 && nearest < 12f
                 && squad.Members.Exists(m => m.AssignedRole == SquadRole.Missile);
 
-            // Isolated target: single engagement and pack outnumbers (swarm surround).
-            assessment.TargetIsolated = engaged > 0 && alive >= 3
+            assessment.TargetIsolated = engaged > 0 && alivePos >= 3
                 && (assessment.ThreatCount <= 1)
                 && nearest <= 12f;
 
             EnrichTrollProximity(centroid, assessment);
             EnrichEnvironmentHeuristics(squad, centroid, assessment);
+            _siege.EnrichWorkbenchProximity(centroid, assessment);
 #else
-            // Stub / CI: no world threats; environment flags remain false (doctrine FSMs still run on injected snapshots).
+            // Stub / CI: world threats stay empty; casualty / broken proxies above still fire
+            // so anxiety / retreat doctrine branches work in offline sims.
             _ = squad;
             _ = Vector3.zero;
-            // Config placeholders are available for tests that set flags manually on ThreatAssessment.
             _ = PluginConfig.StructureDefenseRange;
             _ = PluginConfig.DvergrSoftenRange;
+            _siege.EnrichWorkbenchProximity(Vector3.zero, assessment);
 #endif
+            // Offline / injected threat hooks win over world scans (tests + stub sims).
+            if (squad.DebugThreatCount.HasValue)
+                assessment.ThreatCount = squad.DebugThreatCount.Value;
+            if (squad.DebugNearestThreatDistance.HasValue)
+                assessment.NearestDistance = squad.DebugNearestThreatDistance.Value;
+
+            var aliveForSiege = alive;
+            assessment.AssaultActive =
+                assessment.NearWorkbench
+                && SiegeDirector.IsMasterEnabled
+                && SiegeDirector.IsSiegeEligibleDoctrine(squad.Doctrine?.Id)
+                && aliveForSiege >= SiegeDirector.MinAssaultSquadSize;
             return assessment;
+        }
+
+        /// <summary>
+        /// Casualty proxies from PeakAlive (missing members vs historical peak) and optional HealthRatio.
+        /// IsBroken when ratio ≥ <see cref="BrokenCasualtyThreshold"/> or alive drops below min after having met it.
+        /// </summary>
+        public static (float ratio, bool isBroken) ComputeCasualties(int alive, SquadRuntimeState? state, int minSize)
+        {
+            var peak = state != null ? Math.Max(state.PeakAlive, alive) : alive;
+            if (peak <= 0)
+                return (0f, false);
+
+            var ratio = 1f - (float)alive / peak;
+            if (ratio < 0f)
+                ratio = 0f;
+            if (ratio > 1f)
+                ratio = 1f;
+
+            var everMin = state != null && state.EverMetMinSize;
+            var belowMin = everMin && alive < minSize;
+            var isBroken = belowMin || ratio >= BrokenCasualtyThreshold;
+            return (ratio, isBroken);
+        }
+
+        private static int CountAlive(SquadUnit squad)
+        {
+            int n = 0;
+            foreach (var m in squad.Members)
+            {
+                if (!m.IsAlive)
+                    continue;
+                // Optional HP proxy: treat near-zero health as dead for casualty math.
+                if (m.HealthRatio >= 0f && m.HealthRatio <= 0.02f)
+                    continue;
+                n++;
+            }
+            return n;
         }
 
 #if VALHEIM_REFS
@@ -223,14 +391,11 @@ namespace FactionTactics.Squad
             Vector3 centroid,
             ThreatAssessment assessment)
         {
-            // IndoorsOrCrypt: dungeon / crypt / buried-height heuristic (stub-tolerant).
             assessment.IndoorsOrCrypt = DetectIndoorsOrCrypt(centroid);
 
-            // NearStructure: piece/totem/village proxies within StructureDefenseRange.
             var structRange = PluginConfig.StructureDefenseRange?.Value ?? 24f;
             assessment.NearStructure = DetectNearStructure(centroid, structRange);
 
-            // NearDvergr: Dvergr* allies/neutrals within soften range (InsectSiege C).
             var dvergrRange = PluginConfig.DvergrSoftenRange?.Value ?? 30f;
             EnrichDvergrProximity(centroid, dvergrRange, assessment);
 
@@ -241,15 +406,11 @@ namespace FactionTactics.Squad
         {
             try
             {
-                // Heuristic: substantially below surface / dungeon env name tokens.
-                // TODO(hypothesis): EnvMan / ZoneSystem location dungeon flags when available.
                 var ground = ZoneSystem.instance != null
                     ? ZoneSystem.instance.GetGroundHeight(centroid)
                     : centroid.y;
                 if (centroid.y < ground - 2.5f)
                     return true;
-
-                // Prefab/location name scan is expensive; skip heavy scans — leave false if unsure.
             }
             catch
             {
@@ -262,8 +423,6 @@ namespace FactionTactics.Squad
         {
             try
             {
-                // TODO(hypothesis): Piece.FindPiecesInRadius / WearNTear for totems/walls.
-                // Lightweight: scan Character-less Piece via FindObjects if available; else false.
                 var pieces = UnityEngine.Object.FindObjectsOfType<Piece>();
                 foreach (var p in pieces)
                 {
@@ -321,7 +480,6 @@ namespace FactionTactics.Squad
                 return;
 
             var range = TrollFortressHelper.SynergyRange;
-            // TODO(hypothesis): FindObjectsOfType is OK on 0.5–1s tick; prefer registry if hot.
             var ais = UnityEngine.Object.FindObjectsOfType<MonsterAI>();
             int count = 0;
             float nearest = float.MaxValue;
@@ -349,7 +507,6 @@ namespace FactionTactics.Squad
         {
             try
             {
-                // Low HP proxy via common Character health accessors.
                 var getHealth = typeof(Character).GetMethod("GetHealth");
                 var getMax = typeof(Character).GetMethod("GetMaxHealth");
                 if (getHealth != null && getMax != null)
@@ -360,7 +517,6 @@ namespace FactionTactics.Squad
                         assessment.ThreatStaggeredOrLow = true;
                 }
 
-                // Stagger / staggerable flags if present on this build.
                 var staggerField = typeof(Character).GetField("m_staggerDamageFactor")
                                    ?? typeof(Character).GetField("m_staggerTimer");
                 _ = staggerField;
@@ -376,7 +532,6 @@ namespace FactionTactics.Squad
         {
             try
             {
-                // Common patterns across Valheim versions — pick whatever exists at runtime via reflection if needed.
                 var mi = typeof(MonsterAI).GetMethod("GetTargetCreature")
                          ?? typeof(MonsterAI).GetMethod("GetAttackTarget");
                 if (mi != null)
@@ -390,10 +545,10 @@ namespace FactionTactics.Squad
         }
 
         private static bool Starts(string name, string prefix)
-            => name.StartsWith(prefix, System.StringComparison.OrdinalIgnoreCase);
+            => name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
 
         private static bool Contains(string name, string token)
-            => name.IndexOf(token, System.StringComparison.OrdinalIgnoreCase) >= 0;
+            => name.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0;
 #endif
     }
 }

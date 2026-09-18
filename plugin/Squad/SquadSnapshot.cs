@@ -51,6 +51,28 @@ namespace FactionTactics.Squad
         /// <summary>InsectSiege C: true when NearbyDvergrCount &gt; 0 within soften range.</summary>
         public bool NearDvergr { get; set; }
 
+        /// <summary>
+        /// Siege Assault: player workbench / crafting station within WorkbenchTriggerRange.
+        /// Stub false without VALHEIM_REFS.
+        /// </summary>
+        public bool NearWorkbench { get; set; }
+
+        /// <summary>Siege Assault: meters to nearest detected workbench.</summary>
+        public float NearestWorkbenchDistance { get; set; } = float.MaxValue;
+
+        /// <summary>
+        /// Siege Assault: players inside the assault bubble.
+        /// False → light-touch (allow vanilla structure targeting).
+        /// True → role-split (wall-breakers breach; missiles cover).
+        /// </summary>
+        public bool PlayersNearAssault { get; set; }
+
+        /// <summary>
+        /// Siege Assault: squad is in Assault stance this tick
+        /// (NearWorkbench + eligible doctrine + size gate + master flag).
+        /// </summary>
+        public bool AssaultActive { get; set; }
+
         /// <summary>Doctrine-tunable ranges (meters).</summary>
         public float AdvanceRange { get; set; } = 28f;
         public float ChargeRange { get; set; } = 10f;
@@ -109,6 +131,10 @@ namespace FactionTactics.Squad
                 NearStructure = threats.NearStructure,
                 NearbyDvergrCount = threats.NearbyDvergrCount,
                 NearDvergr = threats.NearDvergr,
+                NearWorkbench = threats.NearWorkbench,
+                NearestWorkbenchDistance = threats.NearestWorkbenchDistance,
+                PlayersNearAssault = threats.PlayersNearAssault,
+                AssaultActive = threats.AssaultActive,
                 AdvanceRange = advance,
                 ChargeRange = charge,
                 Roles = roles,
@@ -156,5 +182,12 @@ namespace FactionTactics.Squad
         public bool NearStructure { get; set; }
         public int NearbyDvergrCount { get; set; }
         public bool NearDvergr { get; set; }
+
+        /// <summary>Siege Assault: workbench / crafting station nearby.</summary>
+        public bool NearWorkbench { get; set; }
+        public float NearestWorkbenchDistance { get; set; } = float.MaxValue;
+        public bool PlayersNearAssault { get; set; }
+        /// <summary>Set by SquadDirector after SiegeDirector eligibility check.</summary>
+        public bool AssaultActive { get; set; }
     }
 }

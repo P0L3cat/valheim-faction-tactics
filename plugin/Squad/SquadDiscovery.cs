@@ -3,14 +3,16 @@ using System.Collections.Generic;
 using System.Linq;
 using FactionTactics.Config;
 using FactionTactics.Doctrine;
+using FactionTactics.Util;
 using UnityEngine;
 
 namespace FactionTactics.Squad
 {
     /// <summary>
-    /// Discovers faction allies and clusters them into squads by proximity.
+    /// Discovers faction allies (within DiscoveryRadius of players) and clusters by SquadClusterRadius.
+    /// SquadId is a member-set fingerprint; SquadDirector replaces it with a persistent StableId.
     /// </summary>
-    public sealed class SquadDiscovery
+    public sealed class SquadDiscovery : ISquadDiscovery
     {
         private readonly DoctrinePackRegistry _registry;
         private int _nextSquadSerial;
@@ -32,19 +34,22 @@ namespace FactionTactics.Squad
             foreach (var group in byDoctrine)
             {
                 var members = group.ToList();
-                var clusters = ClusterByProximity(members, PluginConfig.SquadClusterRadius.Value);
+                var clusters = ClusterByProximity(members, PluginConfig.SquadClusterRadius?.Value ?? 18f);
                 foreach (var cluster in clusters)
                 {
                     if (cluster.Count == 0)
                         continue;
 
                     var doctrine = cluster[0].Doctrine;
+                    var views = cluster.Select(c => c.View).ToList();
+                    // Fingerprint from member set; SquadDirector replaces with persistent StableId.
                     var squad = new SquadUnit
                     {
-                        SquadId = $"{doctrine.Id}-{++_nextSquadSerial}",
+                        SquadId = SquadIdentity.MemberFingerprint(doctrine.Id, views),
                         Doctrine = doctrine,
                     };
-                    squad.Members.AddRange(cluster.Select(c => c.View));
+                    _ = ++_nextSquadSerial; // retained for diagnostics / future telemetry
+                    squad.Members.AddRange(views);
                     AssignRoles(squad);
                     squads.Add(squad);
                 }
@@ -67,13 +72,20 @@ namespace FactionTactics.Squad
             var list = new List<Candidate>();
 
 #if VALHEIM_REFS
-            // TODO(hypothesis): FindObjectsOfType&lt;MonsterAI&gt; is acceptable on dedicated tick (0.5–1s).
+            // TODO(hypothesis): FindObjectsOfType<MonsterAI> is acceptable on dedicated tick (0.5–1s).
             // Prefer a maintained registry if profiling shows spikes.
+            // DiscoveryRadius: only consider allies near any local player (≠ SquadClusterRadius).
+            var discoveryRadius = PluginConfig.DiscoveryRadius?.Value ?? 40f;
+            var playerPositions = CollectPlayerPositions();
+
             var ais = UnityEngine.Object.FindObjectsOfType<MonsterAI>();
             foreach (var ai in ais)
             {
                 var ch = ai.m_character;
                 if (ch == null || ch.IsDead())
+                    continue;
+
+                if (playerPositions.Count > 0 && !WithinAny(ch.transform.position, playerPositions, discoveryRadius))
                     continue;
 
                 var prefab = SanitizePrefabName(ch.name);
@@ -89,18 +101,53 @@ namespace FactionTactics.Squad
             }
 #else
             // Without game DLLs discovery is empty; director/doctrine still unit-testable with injected views.
+            // DiscoveryRadius is still a config knob for VALHEIM_REFS builds (cluster radius ≠ discovery radius).
             _ = _registry;
+            _ = PluginConfig.DiscoveryRadius;
 #endif
             return list;
         }
+
+#if VALHEIM_REFS
+        private static List<Vector3> CollectPlayerPositions()
+        {
+            var positions = new List<Vector3>();
+            try
+            {
+                // TODO(hypothesis): Player.GetAllPlayers() when available; FindObjectsOfType as fallback.
+                var players = UnityEngine.Object.FindObjectsOfType<Player>();
+                foreach (var p in players)
+                {
+                    if (p == null)
+                        continue;
+                    positions.Add(p.transform.position);
+                }
+            }
+            catch
+            {
+                // no players → do not radius-filter (dedicated empty / early load)
+            }
+            return positions;
+        }
+
+        private static bool WithinAny(Vector3 pos, List<Vector3> anchors, float radius)
+        {
+            for (int i = 0; i < anchors.Count; i++)
+            {
+                if (Vector3.Distance(pos, anchors[i]) <= radius)
+                    return true;
+            }
+            return false;
+        }
+#endif
 
 #if VALHEIM_REFS
         private static SquadMemberView BuildView(Character ch, string prefab, MonsterAI ai)
         {
             var view = new SquadMemberView
             {
-                // TODO(hypothesis): ZDOID / instance id — verify against current assembly_valheim.
-                InstanceId = ch.GetHashCode(),
+                // Stable ZDO packing — see ValheimIds.ToLong (UserID<<32 | ID).
+                InstanceId = ValheimIds.FromCharacter(ch),
                 PrefabName = prefab,
                 Position = ch.transform.position,
                 IsAlive = !ch.IsDead(),

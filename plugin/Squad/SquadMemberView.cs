@@ -14,6 +14,12 @@ namespace FactionTactics.Squad
         public bool IsAlive { get; set; } = true;
         public SquadRole AssignedRole { get; set; } = SquadRole.Unassigned;
 
+        /// <summary>
+        /// Optional HP ratio 0..1 when known (stubs/tests or VALHEIM_REFS).
+        /// Negative means unknown — casualty proxy falls back to PeakAlive / missing members.
+        /// </summary>
+        public float HealthRatio { get; set; } = -1f;
+
         /// <summary>Opaque handle for OrderApplicator (Character / MonsterAI). Not serialized.</summary>
         public object? NativeHandle { get; set; }
 
