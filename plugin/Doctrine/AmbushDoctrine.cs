@@ -11,23 +11,23 @@ namespace FactionTactics.Doctrine
     /// Refuse fair fights: lurk → multi-angle flash → disperse → re-ambush.
     /// High anxiety, low slugfest. TrollFortress synergy consulted when enabled.
     /// </summary>
-    public sealed class AmbushDoctrine : IDoctrinePack
+    public sealed class AmbushDoctrine : DoctrinePackBase
     {
-        public string Id => "ambush";
-        public string DisplayName => "Ambush";
+        public override string Id => "ambush";
+        public override string DisplayName => "Ambush";
 
         /// <summary>
         /// Prefab family: Greydwarf, Greydwarf_Elite (Brute), Greydwarf_Shaman.
         /// MatchesPrefab applies extra excludes (Root / Greyling).
         /// </summary>
-        public IReadOnlyList<string> PrefabPrefixes { get; } = new[]
+        public override IReadOnlyList<string> PrefabPrefixes { get; } = new[]
         {
             "Greydwarf",
         };
 
-        public bool IsEnabled => PluginConfig.EnableAmbush?.Value ?? true;
+        public override bool IsEnabled => PluginConfig.EnableAmbush?.Value ?? true;
 
-        public bool MatchesPrefab(string prefabName)
+        public override bool MatchesPrefab(string prefabName)
         {
             if (string.IsNullOrEmpty(prefabName))
                 return false;
@@ -45,7 +45,7 @@ namespace FactionTactics.Doctrine
             return false;
         }
 
-        public SquadRole AssignRole(SquadMemberView member, IReadOnlyList<SquadMemberView> squad)
+        public override SquadRole AssignRole(SquadMemberView member, IReadOnlyList<SquadMemberView> squad)
         {
             // Roles: shaman (opener/poison) → Missile; brute → Front (heavy);
             // swarm normals → Flanker. One Leader among brutes/lowest id if needed.
@@ -70,10 +70,10 @@ namespace FactionTactics.Doctrine
             return SquadRole.Flanker;
         }
 
-        public DoctrineOrderKind SelectOrder(SquadSnapshot snapshot, DoctrineOrderKind? previous)
+        public override DoctrineOrderKind SelectOrder(SquadSnapshot snapshot, DoctrineOrderKind? previous)
         {
             // Ambush / Black Forest ranges: tight pocket, early break-off.
-            // Snapshot AdvanceRange/ChargeRange may still be Roman defaults; use local pocket.
+            // Local pocket constants; snapshot AdvanceRange/ChargeRange also set for Ambush.
             const float pocketEntry = 16f;   // players enter ambush pocket
             const float flashRange = 9f;    // multi-angle flash charge
             const float reAmbushGap = 22f;  // after disperse, hold until gap reopens
@@ -130,7 +130,15 @@ namespace FactionTactics.Doctrine
             }
 
             // 5) Flash charge window — swarm Flank→Charge; brute only if target isolated/low
-            if (hasSwarm && previous != DoctrineOrderKind.Flank && previous != DoctrineOrderKind.Charge)
+            // Hysteresis: once peeling (Kite) while not isolated, hold Kite until gap or isolate
+            // to avoid Flank↔Kite oscillation every tick.
+            if (previous == DoctrineOrderKind.Kite
+                && snapshot.NearestThreatDistance <= flashRange
+                && !snapshot.TargetIsolated)
+                return DoctrineOrderKind.Kite;
+
+            if (hasSwarm && previous != DoctrineOrderKind.Flank && previous != DoctrineOrderKind.Charge
+                && previous != DoctrineOrderKind.Kite)
                 return DoctrineOrderKind.Flank;
 
             if (ShouldCommitFlash(snapshot, hasBrute, hasSwarm, previous))
@@ -180,19 +188,6 @@ namespace FactionTactics.Doctrine
                || Contains(member.PrefabName, "Brute")
                || member.LooksLikeHeavy;
 
-        private static bool IsLowestId(SquadMemberView member, IReadOnlyList<SquadMemberView> squad)
-        {
-            long min = long.MaxValue;
-            foreach (var m in squad)
-            {
-                if (m.InstanceId < min)
-                    min = m.InstanceId;
-            }
-            return member.InstanceId == min;
-        }
 
-        private static bool Contains(string name, string token)
-            => name != null
-               && name.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0;
     }
 }

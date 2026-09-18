@@ -10,31 +10,19 @@ namespace FactionTactics.Doctrine
     /// Skeleton* → Roman: shield line, missiles behind, flanks, disciplined reform.
     /// Fully implemented for the first spike.
     /// </summary>
-    public sealed class RomanDoctrine : IDoctrinePack
+    public sealed class RomanDoctrine : DoctrinePackBase
     {
-        public string Id => "roman";
-        public string DisplayName => "Roman";
+        public override string Id => "roman";
+        public override string DisplayName => "Roman";
 
-        public IReadOnlyList<string> PrefabPrefixes { get; } = new[]
+        public override IReadOnlyList<string> PrefabPrefixes { get; } = new[]
         {
             "Skeleton",
         };
 
-        public bool IsEnabled => PluginConfig.EnableRoman?.Value ?? true;
+        public override bool IsEnabled => PluginConfig.EnableRoman?.Value ?? true;
 
-        public bool MatchesPrefab(string prefabName)
-        {
-            if (string.IsNullOrEmpty(prefabName))
-                return false;
-            foreach (var prefix in PrefabPrefixes)
-            {
-                if (prefabName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                    return true;
-            }
-            return false;
-        }
-
-        public SquadRole AssignRole(SquadMemberView member, IReadOnlyList<SquadMemberView> squad)
+        public override SquadRole AssignRole(SquadMemberView member, IReadOnlyList<SquadMemberView> squad)
         {
             // Heuristics: bow/missile → Missile; named "leader" / first by id → Leader;
             // agile/light → Flanker; default Front (hastati line).
@@ -53,7 +41,7 @@ namespace FactionTactics.Doctrine
             return SquadRole.Front;
         }
 
-        public DoctrineOrderKind SelectOrder(SquadSnapshot snapshot, DoctrineOrderKind? previous)
+        public override DoctrineOrderKind SelectOrder(SquadSnapshot snapshot, DoctrineOrderKind? previous)
         {
             // Roman FSM (scripted):
             // 1) No threat → Hold
@@ -94,15 +82,5 @@ namespace FactionTactics.Doctrine
             return DoctrineOrderKind.Advance;
         }
 
-        private static bool IsLowestId(SquadMemberView member, IReadOnlyList<SquadMemberView> squad)
-        {
-            long min = long.MaxValue;
-            foreach (var m in squad)
-            {
-                if (m.InstanceId < min)
-                    min = m.InstanceId;
-            }
-            return member.InstanceId == min;
-        }
     }
 }

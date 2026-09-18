@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -18,8 +19,12 @@ namespace FactionTactics.Doctrine
             {
                 new RomanDoctrine(),
                 new AmbushDoctrine(),
-                new VikingDoctrine(),
-                new MongolDoctrine(),
+                new VikingShieldWallDoctrine(),
+                new SteppeDoctrine(),
+                new InsectSiegeDoctrine(),
+                new CharredLegionDoctrine(),
+                new PackHuntersDoctrine(),
+                new ArtilleryJellyDoctrine(),
             });
         }
 
@@ -37,7 +42,7 @@ namespace FactionTactics.Doctrine
 
         public IDoctrinePack? GetById(string id)
         {
-            return _packs.FirstOrDefault(p => p.Id == id);
+            return _packs.FirstOrDefault(p => string.Equals(p.Id, id, StringComparison.OrdinalIgnoreCase));
         }
     }
 }
