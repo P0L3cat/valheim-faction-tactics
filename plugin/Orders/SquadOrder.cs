@@ -22,9 +22,21 @@ namespace FactionTactics.Orders
         /// <summary>Optional per-member role overrides (instanceId → role name).</summary>
         public Dictionary<string, string>? RoleOverrides { get; set; }
 
-        /// <summary>Who produced this order (scripted | llm | scorer-augmented).</summary>
+        /// <summary>Who produced this order (scripted | llm | scorer-augmented | scripted+siege).</summary>
         public string Source { get; set; } = "scripted";
 
         public string? Notes { get; set; }
+
+        /// <summary>Siege Assault v1: order produced under AssaultStance.</summary>
+        public bool AssaultActive { get; set; }
+
+        /// <summary>Siege Assault: players in the assault bubble (role-split vs quiet).</summary>
+        public bool AssaultPlayersPresent { get; set; }
+
+        /// <summary>
+        /// Quiet assault: do not fight vanilla MonsterAI structure targeting
+        /// (wall-breakers may chew pieces via vanilla when no players present).
+        /// </summary>
+        public bool AllowVanillaStructure { get; set; }
     }
 }
