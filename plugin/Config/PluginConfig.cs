@@ -10,11 +10,25 @@ namespace FactionTactics.Config
         public static ConfigEntry<float> DiscoveryRadius { get; private set; } = null!;
         public static ConfigEntry<float> SquadClusterRadius { get; private set; } = null!;
         public static ConfigEntry<bool> EnableRoman { get; private set; } = null!;
-        public static ConfigEntry<bool> EnableViking { get; private set; } = null!;
-        public static ConfigEntry<bool> EnableMongol { get; private set; } = null!;
         public static ConfigEntry<bool> EnableAmbush { get; private set; } = null!;
+        public static ConfigEntry<bool> EnableVikingShieldWall { get; private set; } = null!;
+        public static ConfigEntry<bool> EnableSteppe { get; private set; } = null!;
+        public static ConfigEntry<bool> EnableInsectSiege { get; private set; } = null!;
+        public static ConfigEntry<bool> EnableCharredLegion { get; private set; } = null!;
+        public static ConfigEntry<bool> EnablePackHunters { get; private set; } = null!;
+        public static ConfigEntry<bool> EnableArtilleryJelly { get; private set; } = null!;
         public static ConfigEntry<bool> EnableTrollSynergy { get; private set; } = null!;
         public static ConfigEntry<float> TrollSynergyRange { get; private set; } = null!;
+        public static ConfigEntry<float> StructureDefenseRange { get; private set; } = null!;
+        public static ConfigEntry<float> DvergrSoftenRange { get; private set; } = null!;
+
+        // --- Siege Assault v1 ---
+        public static ConfigEntry<bool> EnableSiegeAssault { get; private set; } = null!;
+        public static ConfigEntry<float> WorkbenchTriggerRange { get; private set; } = null!;
+        public static ConfigEntry<int> SiegeMinSquadSize { get; private set; } = null!;
+        public static ConfigEntry<bool> EnableSiegeAmbush { get; private set; } = null!;
+        public static ConfigEntry<bool> EnableSiegeViking { get; private set; } = null!;
+
         public static ConfigEntry<bool> DebugLogging { get; private set; } = null!;
 
         public static void Bind(ConfigFile config)
@@ -41,7 +55,8 @@ namespace FactionTactics.Config
                 "Squad",
                 "DiscoveryRadius",
                 40f,
-                "World radius used when scanning for faction allies.");
+                "Max distance from any local player when scanning for faction allies. "
+                + "Distinct from SquadClusterRadius (how tight a squad groups).");
 
             SquadClusterRadius = config.Bind(
                 "Squad",
@@ -53,25 +68,49 @@ namespace FactionTactics.Config
                 "Doctrine",
                 "EnableRoman",
                 true,
-                "Skeleton* → Roman doctrine (spike — implemented).");
-
-            EnableViking = config.Bind(
-                "Doctrine",
-                "EnableViking",
-                false,
-                "Draugr* → Viking doctrine (stub).");
-
-            EnableMongol = config.Bind(
-                "Doctrine",
-                "EnableMongol",
-                false,
-                "Fuling* → Mongol/steppe doctrine (stub).");
+                "Skeleton* → Roman doctrine.");
 
             EnableAmbush = config.Bind(
                 "Doctrine",
                 "EnableAmbush",
                 true,
-                "Greydwarf* → Black Forest Ambush predators (implemented).");
+                "Greydwarf* → Black Forest Ambush predators.");
+
+            EnableVikingShieldWall = config.Bind(
+                "Doctrine",
+                "EnableVikingShieldWall",
+                true,
+                "Draugr* → VikingShieldWall (shield wall, archers behind, charge, reform).");
+
+            EnableSteppe = config.Bind(
+                "Doctrine",
+                "EnableSteppe",
+                true,
+                "Fuling*/Goblin* → Steppe (kite, volley, encircle; village defense orbit).");
+
+            EnableInsectSiege = config.Bind(
+                "Doctrine",
+                "EnableInsectSiege",
+                true,
+                "Seeker*/Tick*/Gjall* → InsectSiege (Mistlands; soften near Dvergr).");
+
+            EnableCharredLegion = config.Bind(
+                "Doctrine",
+                "EnableCharredLegion",
+                true,
+                "Charred*/Asksvin* → CharredLegion (dense ranks + cavalry flankers).");
+
+            EnablePackHunters = config.Bind(
+                "Doctrine",
+                "EnablePackHunters",
+                true,
+                "Wolf*/Drake*/Hatchling* → PackHunters (encircle + overwatch).");
+
+            EnableArtilleryJelly = config.Bind(
+                "Doctrine",
+                "EnableArtilleryJelly",
+                true,
+                "Blob* → ArtilleryJelly (keep range, zone denial, no melee chase).");
 
             EnableTrollSynergy = config.Bind(
                 "Doctrine",
@@ -84,6 +123,49 @@ namespace FactionTactics.Config
                 "TrollSynergyRange",
                 28f,
                 "Max distance (m) from greydwarf squad centroid to a Troll for fortress synergy.");
+
+            StructureDefenseRange = config.Bind(
+                "Doctrine",
+                "StructureDefenseRange",
+                24f,
+                "Steppe NearStructure placeholder range (m) when village/totem/structure heuristic is unavailable.");
+
+            DvergrSoftenRange = config.Bind(
+                "Doctrine",
+                "DvergrSoftenRange",
+                30f,
+                "InsectSiege: soften aggression when Dvergr* allies/neutrals are within this range (m).");
+
+            EnableSiegeAssault = config.Bind(
+                "Siege",
+                "EnableSiegeAssault",
+                true,
+                "Siege Assault v1 master switch (Assault only — no Defense/Raid Event). "
+                + "Does not spawn or start raids; may make already-nearby mobs fight / push bases harder.");
+
+            WorkbenchTriggerRange = config.Bind(
+                "Siege",
+                "WorkbenchTriggerRange",
+                48f,
+                "Radius (m) from squad centroid to detect player workbench / crafting stations for Assault.");
+
+            SiegeMinSquadSize = config.Bind(
+                "Siege",
+                "SiegeMinSquadSize",
+                3,
+                "Minimum squad size to enter Siege Assault stance (may differ from Squad.MinSquadSize).");
+
+            EnableSiegeAmbush = config.Bind(
+                "Siege",
+                "EnableSiegeAmbush",
+                true,
+                "Allow Ambush (Greydwarf / Black Forest) squads to enter Siege Assault. Meadows: no siege.");
+
+            EnableSiegeViking = config.Bind(
+                "Siege",
+                "EnableSiegeViking",
+                true,
+                "Allow VikingShieldWall (Draugr / Swamp) squads to enter Siege Assault. Higher biomes: not enabled yet.");
 
             DebugLogging = config.Bind(
                 "Debug",
