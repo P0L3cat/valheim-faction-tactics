@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>FactionTactics</AssemblyName>
+    <RootNamespace>FactionTactics</RootNamespace>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <OutputPath>bin\$(Configuration)\</OutputPath>
+    <!--
+      Set ValheimDir (MSBuild prop or VALHEIM_INSTALL env) to your Valheim install.
+      Example:
+        dotnet build -p:ValheimDir="C:\Program Files (x86)\Steam\steamapps\common\Valheim"
+    -->
+    <ValheimDir Condition="'$(ValheimDir)' == ''">$(VALHEIM_INSTALL)</ValheimDir>
+    <ValheimManaged>$(ValheimDir)\valheim_Data\Managed</ValheimManaged>
+    <BepInExDir Condition="'$(BepInExDir)' == ''">$(ValheimDir)\BepInEx</BepInExDir>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="Exists('$(ValheimManaged)\assembly_valheim.dll')">
+    <DefineConstants>$(DefineConstants);VALHEIM_REFS</DefineConstants>
+  </PropertyGroup>
+
+  <!-- Real game / BepInEx / HarmonyX refs when ValheimDir is valid -->
+  <ItemGroup Condition="Exists('$(ValheimManaged)\assembly_valheim.dll')">
+    <Reference Include="assembly_valheim">
+      <HintPath>$(ValheimManaged)\assembly_valheim.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="assembly_utils">
+      <HintPath>$(ValheimManaged)\assembly_utils.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(ValheimManaged)\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(ValheimManaged)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="BepInEx">
+      <HintPath>$(BepInExDir)\core\BepInEx.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(BepInExDir)\core\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Enables net472 compile on Linux/macOS without a full Framework install -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\README.md" Link="README.md" />
+    <None Include="..\ARCHITECTURE.md" Link="ARCHITECTURE.md" />
+    <None Include="Commander\LlmCommander.NOTES.md" />
+  </ItemGroup>
+</Project>
