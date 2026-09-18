@@ -6,6 +6,7 @@ using FactionTactics.Config;
 using FactionTactics.Doctrine;
 using FactionTactics.HarmonyPatches;
 using FactionTactics.Orders;
+using FactionTactics.Siege;
 using FactionTactics.Squad;
 using HarmonyLib;
 
@@ -37,7 +38,8 @@ namespace FactionTactics
             PluginConfig.Bind(Config);
 
             var registry = DoctrinePackRegistry.CreateDefault();
-            ICommander commander = new ScriptedCommander(registry);
+            var siege = new SiegeDirector();
+            ICommander commander = new ScriptedCommander(registry, siege);
             IRoleScorer roleScorer = new NullRoleScorer();
             IActionScorer actionScorer = new NullActionScorer();
             var applicator = new OrderApplicator();
@@ -49,13 +51,14 @@ namespace FactionTactics
                 registry,
                 roleScorer,
                 actionScorer,
-                applicator);
+                applicator,
+                siege);
 
             if (PluginConfig.EnablePlugin.Value)
             {
                 _harmony = new Harmony(PluginGuid);
                 MonsterAIPatches.Apply(_harmony);
-                Log.LogInfo($"{PluginName} {PluginVersion} loaded (Roman + Ambush). Tick={PluginConfig.TickIntervalSeconds.Value}s");
+                Log.LogInfo($"{PluginName} {PluginVersion} loaded (doctrine packs + Siege Assault v1). Tick={PluginConfig.TickIntervalSeconds.Value}s");
             }
             else
             {
