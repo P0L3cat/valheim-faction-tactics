@@ -2,10 +2,29 @@
 
 Valheim **BepInEx 5 + HarmonyX** plugin: doctrine packs + squad FSM (Route 1), with Route 2 scorer hooks and Route 3 `ICommander` / `SquadOrder` seams.
 
-**Implemented:** Skeleton → **Roman**; Greydwarf* → **Ambush** (+ Troll mobile-fortress synergy).  
-**Stubs:** Draugr → Viking, Fuling → Mongol.
+**Implemented packs:** Roman, Ambush (+ Troll fortress), VikingShieldWall, Steppe, InsectSiege, CharredLegion, PackHunters, ArtilleryJelly.  
+**Siege Assault v1:** Assault-only for Ambush + VikingShieldWall (workbench trigger).
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) for the product lock.
+
+## Encounter rate
+
+This mod **only tunes AI behavior**. It does **not** spawn mobs, trigger extra raids, or change vanilla encounter rates. Siege "assault" means: if greydwarfs/draugr are *already* near your workbench, they fight smarter — nothing new is summoned.
+
+**Feel note:** smarter nearby mobs (assault + doctrine) can still *feel* like more base pressure. That is behavior-only; spawn rates are unchanged. See `ARCHITECTURE.md` encounter-rate section.
+
+## Faction table
+
+| Pack | Prefabs | Enable flag | Key FSM |
+|------|---------|-------------|---------|
+| Roman | `Skeleton*` | `EnableRoman` | Hold → Advance → FocusFire/ProtectMissiles → Charge/Flank → Reform |
+| Ambush | `Greydwarf*` | `EnableAmbush` | Hold → Flank → Charge (flash) → Reform → Kite (+ Troll synergy) |
+| VikingShieldWall | `Draugr*` | `EnableVikingShieldWall` | Shield wall Hold → Advance → archers FocusFire → Charge → Reform (choke bias indoors) |
+| Steppe | `Fuling*` / `Goblin*` | `EnableSteppe` | Kite → volley FocusFire → Flank encircle; berserk Charge only on cut-off; village orbit |
+| InsectSiege | `Seeker*` / `Tick*` / `Gjall*` | `EnableInsectSiege` | Soldiers Advance, Seekers Flank, Gjall FocusFire; soften near Dvergr |
+| CharredLegion | `Charred*` / `Asksvin*` | `EnableCharredLegion` | Dense ranks + rear casters; Asksvin cavalry Flank (not in rank) |
+| PackHunters | `Wolf*` / `Drake*` / `Hatchling*` | `EnablePackHunters` | Wolves Flank/Charge; Drake FocusFire overwatch / punish clump |
+| ArtilleryJelly | `Blob*` | `EnableArtilleryJelly` | Keep range FocusFire / Kite; never melee Charge |
 
 ## Open / build
 
@@ -97,7 +116,7 @@ Example `manifest.json` fields:
   "name": "FactionTactics",
   "version_number": "0.1.0",
   "website_url": "",
-  "description": "Doctrine packs + squad FSM for Valheim humanoid factions (Roman + Ambush).",
+  "description": "Doctrine packs + squad FSM for Valheim humanoid factions.",
   "dependencies": [
     "denikson-BepInExPack_Valheim-5.4.2202"
   ]
@@ -113,14 +132,25 @@ Pin the BepInExPack dependency version to whatever your host uses.
 | `General.EnablePlugin` | true | Master switch |
 | `General.TickIntervalSeconds` | 0.75 | SquadDirector tick |
 | `Squad.MinSquadSize` | 3 | Below → vanilla AI |
-| `Squad.DiscoveryRadius` | 40 | Ally scan radius |
+| `Squad.DiscoveryRadius` | 40 | Ally scan radius from local players (≠ cluster radius) |
 | `Squad.SquadClusterRadius` | 18 | Cluster distance |
-| `Doctrine.EnableRoman` | true | Skeleton* |
+| `Doctrine.EnableRoman` | true | Skeleton* Roman |
 | `Doctrine.EnableAmbush` | true | Greydwarf* Ambush |
+| `Doctrine.EnableVikingShieldWall` | true | Draugr* VikingShieldWall |
+| `Doctrine.EnableSteppe` | true | Fuling*/Goblin* Steppe |
+| `Doctrine.EnableInsectSiege` | true | Seeker*/Tick*/Gjall* InsectSiege |
+| `Doctrine.EnableCharredLegion` | true | Charred*/Asksvin* CharredLegion |
+| `Doctrine.EnablePackHunters` | true | Wolf*/Drake*/Hatchling* PackHunters |
+| `Doctrine.EnableArtilleryJelly` | true | Blob* ArtilleryJelly |
 | `Doctrine.EnableTrollSynergy` | true | Greys orbit/peel near Troll |
 | `Doctrine.TrollSynergyRange` | 28 | Troll proximity (m) |
-| `Doctrine.EnableViking` | false | Draugr* stub |
-| `Doctrine.EnableMongol` | false | Fuling* stub |
+| `Doctrine.StructureDefenseRange` | 24 | Steppe NearStructure placeholder (m) |
+| `Doctrine.DvergrSoftenRange` | 30 | InsectSiege Dvergr soften (m) |
+| `Siege.EnableSiegeAssault` | true | Assault v1 master (no Defense/Raid yet) |
+| `Siege.WorkbenchTriggerRange` | 48 | Workbench / crafting-station detect (m) |
+| `Siege.SiegeMinSquadSize` | 3 | Min size to enter Assault stance |
+| `Siege.EnableSiegeAmbush` | true | Greydwarf Ambush may assault |
+| `Siege.EnableSiegeViking` | true | Draugr VikingShieldWall may assault |
 | `Debug.DebugLogging` | false | Verbose orders |
 
 ## Black Forest (Ambush + Troll fortress)
@@ -134,6 +164,20 @@ Pin the BepInExPack dependency version to whatever your host uses.
 - Troll near greydwarf squad(s) within `TrollSynergyRange` → greys **Flank/Kite** as skirmishers, peel backside, clear troll path.
 - Lone troll → vanilla MonsterAI (no Ambush pack ownership of `Troll*`).
 
+
+## Siege Assault v1
+
+**Assault only** (no Defense / Raid Event). Triggered when Ambush or VikingShieldWall squads detect a nearby **player workbench** / crafting station.
+
+| Situation | Behavior |
+|-----------|----------|
+| No players near assault | Light-touch `Advance` — **allow vanilla** structure targeting (don't fight MonsterAI wall chewing) |
+| Players present | **Role split:** Front/Leader/Flanker (wall-breakers) press breach (`Charge`/`Advance`/`Flank`); Missile cover them (`ProtectMissiles`/`FocusFire`) — not everyone on walls |
+
+Order mapping: Encircle→`Flank`, TestBreach→`Charge`/`Advance`, FocusWallman→`FocusFire`/`ProtectMissiles`, Withdraw→`RetreatAndReform`/`Kite`.
+
+Meadows: no siege. Higher biomes: siege faction flags not enabled yet.
+
 ## Test notes
 
 1. **Dedicated server** with BepInEx + this DLL; join as client.
@@ -143,16 +187,19 @@ Pin the BepInExPack dependency version to whatever your host uses.
 4. Engage: orders should move Hold → Advance → FocusFire/ProtectMissiles → Charge/Flank; heavy losses → RetreatAndReform.
 5. Solo skeleton (&lt; min size) should behave **vanilla**.
 6. **Black Forest:** spawn Greydwarfs + optional Troll — expect `[Ambush] … → Hold/Flank/Charge/Kite`; with troll nearby, synergy prefers Flank/Kite over frontal Hold/Charge.
-7. Harmony method names are **hypotheses** — if patches fail to apply, check BepInEx log and verify `MonsterAI.UpdateAI` / target APIs with ILSpy against your build (see TODOs in `HarmonyPatches/MonsterAIPatches.cs`).
+7. **Other packs:** Draugr shield wall, Fuling kite/encircle, Mistlands insect siege (soften near Dvergr), Charred ranks + Asksvin flank, Wolf/Drake pack hunt, Blob keep-range FocusFire.
+8. **Siege Assault:** place a workbench near Greydwarfs or Draugr (≥ `SiegeMinSquadSize`) — expect `[Ambush] Assault/quiet|hot …` or Viking; with player present, missiles FocusFire/ProtectMissiles while fronts Charge/Advance.
+9. Harmony method names are **hypotheses** — if patches fail to apply, check BepInEx log and verify `MonsterAI.UpdateAI` / `BaseAI.MoveTo` / `StopMoving` with ILSpy against your build (see VALHEIM_REFS TODOs in `HarmonyPatches/MonsterAIPatches.cs`). **v0.1:** patches may register but MoveTo/StopMoving remain commented no-ops — gameplay stays vanilla aside from intent bookkeeping.
 
 ## Layers (quick)
 
 ```
 ICommander (ScriptedCommander)
-  → SquadDirector (discover, min-size, scorers, troll proximity)
-    → DoctrinePack (Roman / Ambush / Viking stub / Mongol stub)
+  → SquadDirector (discover, min-size, scorers, env/troll/workbench proximity)
+    → SiegeDirector / AssaultStance (Ambush + Viking when NearWorkbench)
+    → DoctrinePack (all factions above)
       → TrollFortressHelper (Ambush synergy only)
-      → OrderApplicator → Harmony MonsterAI intents
+      → OrderApplicator → Harmony MonsterAI intents (+ assault role split)
 ```
 
 Route 2: `IRoleScorer` / `IActionScorer` default to `NullScorer`.  
@@ -169,8 +216,10 @@ faction-tactics/
     Plugin.cs
     Config/
     Commander/
-    Doctrine/          # Roman, Ambush, TrollFortressHelper, Viking, Mongol
+    Doctrine/          # Roman, Ambush, VikingShieldWall, Steppe, InsectSiege,
+                       # CharredLegion, PackHunters, ArtilleryJelly, TrollFortressHelper
     Squad/
+    Siege/             # SiegeDirector, AssaultStance (Assault v1)
     Orders/
     HarmonyPatches/
     Stubs/

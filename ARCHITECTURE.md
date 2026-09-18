@@ -4,19 +4,19 @@
 - **Route 1 (build now):** doctrine packs + squad FSM
 - **Route 2 (framework only):** utility AI / behavior-tree hooks — interfaces only, no full BT
 - **Route 3 (do not block):** tiny RWKV/LLM commander via `ICommander` later — **no model code in v0**
-- **First spike:** Skeleton → Roman (fully implemented)
-- **Black Forest:** Greydwarf* → Ambush (fully implemented) + Troll mobile-fortress synergy (addon)
-- **Stubs:** Draugr → Viking; Fuling → Mongol
+- **Implemented packs:** Roman, Ambush (+ TrollFortress addon), VikingShieldWall, Steppe, InsectSiege, CharredLegion, PackHunters, ArtilleryJelly
+- **Siege Assault v1:** Assault-only; Ambush + Viking; workbench trigger; role-split when players present
 
 ## Layers
 ```
 [ICommander]  ← ScriptedCommander (v0) | future LlmCommander (documented, not coded)
       ↓ emits SquadOrder (JSON-serializable DTO)
 [SquadDirector]  tick ~0.5–1s: discover allies, min-size gate, assign roles, apply doctrine
-      ↓
-[DoctrinePack]  Roman (full) / Ambush (full) / Viking (stub) / Mongol (stub)
+      ↓  (+ SiegeDirector: workbench → AssaultStance for Ambush / Viking)
+[DoctrinePack]  Roman / Ambush / VikingShieldWall / Steppe / InsectSiege /
+                CharredLegion / PackHunters / ArtilleryJelly
       ↓  (+ TrollFortressHelper consulted by Ambush / snapshot enrichment)
-[OrderApplicator]  Harmony patches: MonsterAI path/target/stance
+[OrderApplicator]  Harmony patches: MonsterAI path/target/stance (+ assault role split)
 ```
 
 ### Layer contracts
@@ -24,9 +24,10 @@
 | Layer | Responsibility | Key types |
 |-------|----------------|-----------|
 | **ICommander** | Propose high-level squad intent from a snapshot | `ICommander`, `ScriptedCommander`, `SquadOrder` |
-| **SquadDirector** | Discover/group mobs, gate on min size, tick FSM, consult scorers; enrich troll proximity | `SquadDirector`, `Squad`, `SquadSnapshot` |
-| **DoctrinePack** | Role rules + order vocabulary per faction aesthetic | `IDoctrinePack`, `RomanDoctrine`, `AmbushDoctrine`, … |
+| **SquadDirector** | Discover/group mobs, gate on min size, tick FSM, consult scorers; enrich troll / env heuristics | `SquadDirector`, `Squad`, `SquadSnapshot` |
+| **DoctrinePack** | Role rules + order vocabulary per faction aesthetic | `IDoctrinePack`, pack classes below |
 | **TrollFortress** | Thin addon: greys orbit/peel when Troll nearby; lone troll = vanilla | `TrollFortressHelper` |
+| **SiegeDirector** | Assault v1: workbench trigger → AssaultStance (Ambush + Viking only) | `SiegeDirector`, `AssaultStance` |
 | **OrderApplicator** | Translate `SquadOrder` into MonsterAI overrides via Harmony | `OrderApplicator`, `MonsterAIPatches` |
 
 ## Route 1 — doctrine packs + squad FSM (NOW)
@@ -36,6 +37,32 @@
 3. **Role assignment** — doctrine maps prefab / equipment heuristics → `front | missile | flanker | leader`.
 4. **FSM tick** — commander proposes `SquadOrder`; director applies via OrderApplicator.
 5. **Orders:** `hold`, `advance`, `charge`, `flank`, `focus-fire`, `protect-missiles`, `retreat-and-reform`, `kite`.
+
+## Faction doctrine table
+
+| Doctrine | Id | Prefab family | Status | Key FSM states |
+|----------|-----|---------------|--------|----------------|
+| **Roman** | `roman` | `Skeleton*` | Full | Hold → Advance → ProtectMissiles/FocusFire → Charge/Flank → RetreatAndReform |
+| **Ambush** | `ambush` | `Greydwarf*` (not Root/Greyling) | Full | Hold (lurk) → FocusFire → Flank → Charge (flash) → RetreatAndReform → Kite / re-Hold |
+| **TrollFortress** | *(addon)* | `Troll*` near Ambush | Helper | Orbit Flank/Kite; lone troll = vanilla (not a pack) |
+| **VikingShieldWall** | `viking-shieldwall` | `Draugr*` | Full | Hold (wall) → Advance → ProtectMissiles/FocusFire → Charge → RetreatAndReform; **IndoorsOrCrypt** choke bias |
+| **Steppe** | `steppe` | `Fuling*` / `Goblin*` | Full | Kite → FocusFire (volley) → Flank (encircle) → Charge only if cut-off; **NearStructure** tighter orbit |
+| **InsectSiege** | `insect-siege` | `Seeker*` / `Tick*` / `Gjall*` | Full | Advance → Gjall FocusFire → Flank → Charge; **NearDvergr** soften (Hold/Kite, less commit) |
+| **CharredLegion** | `charred-legion` | `Charred*` / `Asksvin*` | Full | Hold/Advance dense ranks → FocusFire (casters) → Flank (Asksvin cavalry) → Charge |
+| **PackHunters** | `pack-hunters` | `Wolf*` / `Drake*` / `Hatchling*` | Full | FocusFire (Drake overwatch) → Flank encircle → Charge (hamstring) → Kite |
+| **ArtilleryJelly** | `artillery-jelly` | `Blob*` | Full | Hold/Advance → FocusFire (zone denial) → Kite if pressed; **never Charge**; PreferKeepRange |
+
+### Snapshot heuristic flags (B/C biases)
+
+| Flag | Used by | Source |
+|------|---------|--------|
+| `IndoorsOrCrypt` | VikingShieldWall | VALHEIM_REFS buried-height / dungeon heuristic; else stub `false` |
+| `NearStructure` | Steppe | Piece name scan within `StructureDefenseRange`; else stub `false` |
+| `NearDvergr` / `NearbyDvergrCount` | InsectSiege | `Dvergr*` / `Dverger*` within `DvergrSoftenRange` |
+| `NearbyTrollCount` / `NearestTrollDistance` | Ambush + TrollFortress | Existing troll proximity |
+| `NearWorkbench` / `NearestWorkbenchDistance` | Siege Assault | Piece / CraftingStation heuristic within `WorkbenchTriggerRange`; stub `false` |
+| `PlayersNearAssault` | Siege Assault | Players in assault bubble → role split vs quiet vanilla structure |
+| `AssaultActive` | Siege Assault | NearWorkbench + eligible doctrine + `SiegeMinSquadSize` |
 
 ## Black Forest — Ambush predators + Troll fortress
 
@@ -61,12 +88,44 @@ Stance bias: **high anxiety, low slugfest** (break contact early vs Roman).
 ### Troll mobile fortress (addon, not a solo doctrine)
 - When a **Troll** is within `TrollSynergyRange` of a greydwarf squad: greys **orbit as skirmishers** (`Flank` / `Kite`), peel/draw off troll backside, avoid blocking troll path (no frontal `Hold`/`Charge` stack).
 - **Lone troll** (no greys): **no** Faction Tactics override — trolls are not registered as a doctrine pack.
-- Implementation: `TrollFortressHelper` + snapshot fields (`NearbyTrollCount`, `NearestTrollDistance`) filled by `SquadDirector`; Ambush FSM consults helper first. Route 2 scorers may read the same fields; default remains `NullScorer`. Route 3 `ICommander` untouched.
+- Implementation: `TrollFortressHelper` + snapshot fields filled by `SquadDirector`; Ambush FSM consults helper first. Route 2 scorers may read the same fields; default remains `NullScorer`. Route 3 `ICommander` untouched.
+
+
+## Siege Assault v1 (Assault only)
+
+**Mode:** Assault only — no Defense / Raid Event yet.  
+**Trigger:** player **workbenches** / crafting stations near participating squads (`WorkbenchTriggerRange`). Detection is a VALHEIM_REFS Piece + CraftingStation heuristic; stub builds leave `NearWorkbench=false`.  
+**First factions:** **Ambush** (Greydwarf / Black Forest) + **VikingShieldWall** (Draugr / Swamp).  
+**Meadows:** no siege. **Higher biomes:** do not enable siege flags yet (`EnableSiegeAmbush` / `EnableSiegeViking` only).
+
+### Building damage / role split
+- **No players near assault** (`!PlayersNearAssault`): light-touch `Advance` — **do not fight vanilla** structure targeting (`AllowVanillaStructure` on intents).
+- **Players present:** split roles in `OrderApplicator`:
+  - **Wall-breakers** (Front / Leader / melee Flanker / brute) → press structure / breach (`Charge`/`Advance`/`Flank`, `AssaultWallBreaker`).
+  - **Ranged / missile** → defend those wall-attackers (`ProtectMissiles` / `FocusFire` = FocusWallman; `AssaultMissileCover`, keep range — not everyone chewing walls).
+
+### Assault FSM (mapped onto existing order vocab)
+
+| Siege intent | OrderKind | When |
+|--------------|-----------|------|
+| Withdraw | `RetreatAndReform` / `Kite` | Broken / anxiety / post-flash (Ambush) |
+| TestBreach (approach) | `Advance` | Quiet assault, or closing on workbench |
+| Encircle | `Flank` | Ambush hot approach / pre-commit |
+| TestBreach (commit) | `Charge` | Hot commit on breach band |
+| FocusWallman | `FocusFire` / `ProtectMissiles` | Hot + missiles — cover breachers from players |
+
+Flow: workbench detect → `AssaultActive` → `SiegeDirector.TrySelectAssaultOrder` overrides doctrine `SelectOrder` in `ScriptedCommander` → applicator role-split.
+
+### Config (`Siege` section)
+- `EnableSiegeAssault` (master)
+- `WorkbenchTriggerRange` (default 48)
+- `SiegeMinSquadSize` (default 3)
+- `EnableSiegeAmbush` / `EnableSiegeViking`
 
 ## Route 2 hooks (no full BT yet)
 - `IRoleScorer` / `IActionScorer` consulted by `SquadDirector` before committing an order / role.
 - Default: `NullScorer` (FSM-only) so Route 1 ships without utility AI or behavior trees.
-- Future: plug in scorers without changing commander/doctrine contracts (troll proximity already on snapshot).
+- Future: plug in scorers without changing commander/doctrine contracts (troll proximity + env flags already on snapshot).
 
 ## Route 3 hooks (framework unblocked; no model)
 - `SquadOrder` DTO: `formation`, `stance`, `focusTargetId`, `roleOverrides`, `orderKind`, optional metadata.
@@ -80,28 +139,34 @@ Stance bias: **high anxiety, low slugfest** (break contact early vs Roman).
 - Constraints: server-authoritative host only; rate-limit proposes (e.g. 1–2 Hz max); fallback to `ScriptedCommander` on timeout/parse failure.
 - Out of scope for v0: model selection, tokenizer, networking to inference runtime.
 
+## Encounter-rate invariant (product)
+
+Faction Tactics **does not** create encounters. It does not spawn creatures, queue raid waves, or call vanilla `RandomEvent` / invasion APIs. Vanilla spawners and events keep their rates. This mod only changes **how already-present mobs fight** (open-field doctrine + optional assault stance when those mobs are already near a workbench).
+
+**Soft “feel” caveat:** enabling Siege Assault and aggressive doctrine packs can make bases *feel* under more pressure (nearby greydwarfs/draugr press structures, pack FSMs commit harder) without changing spawn rates. Operators who want vanilla-adjacent threat density should leave `EnableSiegeAssault` / aggressive packs off until Harmony steering is validated.
+
+### Squad FSM persistence (architecture)
+
+`SquadDiscovery` rebuilds `SquadUnit` each tick. `SquadDirector` keeps `SquadRuntimeState` keyed by doctrine + member-id overlap so `PreviousOrderKind`, `AgeSeconds`, and `PeakAlive` survive across ticks. `CasualtyRatio` / `IsBroken` are derived from `PeakAlive` vs current alive (and optional `HealthRatio`) so anxiety/retreat branches fire in offline sims and on dedicated.
+
+`DiscoveryRadius` filters allies near local players; `SquadClusterRadius` only controls clustering among candidates.
+
 ## Valheim constraints
 - Server-authoritative dedicated host (apply AI overrides on the machine that owns the mobs).
 - Per-mob `MonsterAI`; we add **squad intent**, not per-frame neural nets.
 - Min squad size gate → else vanilla AI.
 - HarmonyX on BepInEx 5; patch hypotheses documented in `HarmonyPatches` with TODOs until validated in-game.
 
-## Prefab map
-| Doctrine | Prefab family | Status |
-|----------|---------------|--------|
-| Roman | `Skeleton*` | **Implement** |
-| Ambush | `Greydwarf*` (not Root / Greyling) | **Implement** |
-| TrollFortress | `Troll*` near Ambush squads | Addon helper (not a pack) |
-| Viking | `Draugr*` | Stub pack |
-| Mongol (steppe) | `Fuling*` / `Goblin*` | Stub pack |
-
 ## Config (BepInEx)
 - Enable/disable plugin
 - Tick interval (default 0.75s)
 - Min squad size
 - Discovery radius
-- Per-doctrine enable flags (`EnableRoman`, `EnableAmbush`, `EnableViking`, `EnableMongol`)
+- Per-doctrine enable flags (`EnableRoman`, `EnableAmbush`, `EnableVikingShieldWall`, `EnableSteppe`, `EnableInsectSiege`, `EnableCharredLegion`, `EnablePackHunters`, `EnableArtilleryJelly`)
 - `EnableTrollSynergy` + `TrollSynergyRange`
+- `StructureDefenseRange` (Steppe NearStructure placeholder)
+- `DvergrSoftenRange` (InsectSiege soften)
+- Siege Assault: `EnableSiegeAssault`, `WorkbenchTriggerRange`, `SiegeMinSquadSize`, `EnableSiegeAmbush`, `EnableSiegeViking`
 - Debug logging
 
 ## Install / packaging
@@ -119,6 +184,7 @@ Stance bias: **high anxiety, low slugfest** (break contact early vs Roman).
 FactionTactics                 Plugin entry
 FactionTactics.Doctrine        Packs, roles, order kinds, TrollFortressHelper
 FactionTactics.Squad           Director, discovery, scorers, snapshot
+FactionTactics.Siege           SiegeDirector, AssaultStance (Assault v1)
 FactionTactics.Orders          SquadOrder DTO, applicator
 FactionTactics.Commander       ICommander, ScriptedCommander
 FactionTactics.HarmonyPatches  MonsterAI Harmony stubs/TODOs
