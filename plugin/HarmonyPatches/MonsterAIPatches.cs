@@ -13,7 +13,8 @@ namespace FactionTactics.HarmonyPatches
 {
     /// <summary>
     /// Harmony entry + MonsterAI / BaseAI steering + discovery patches.
-    /// 0.1.10: registry by instance-id (no OnDisable clear); also postfix BaseAI.UpdateAI for dedicated diagnostics (baseAIUpdateHits).
+    /// 0.1.10: registry by instance-id (no OnDisable clear); BaseAI.UpdateAI postfix diagnostics.
+    /// 0.1.11: MoveTo Prefix redirects/skips chase; UpdateAI postfix SuppressVanillaChase for ShieldWall/Line Front.
     /// </summary>
     public static class MonsterAIPatches
     {
@@ -22,9 +23,9 @@ namespace FactionTactics.HarmonyPatches
 #if VALHEIM_REFS
             harmony.PatchAll(typeof(MonsterAIPatches).Assembly);
             Plugin.Log.LogInfo(
-                "MonsterAI Harmony patches LIVE (VALHEIM_REFS 0.1.10): MonsterAI.UpdateAI + BaseAI.UpdateAI postfixes; " +
-                "CallMoveTo for formation slots; HoldGround Front StopMoving; " +
-                "registry via OnEnable/Awake/AddInstance + BaseAI/AnimalAI. Needs in-game smoke test.");
+                "MonsterAI Harmony patches LIVE (VALHEIM_REFS 0.1.11): MonsterAI.UpdateAI postfix + BaseAI.MoveTo Prefix; " +
+                "HoldGround/line Front SuppressVanillaChase (clear m_targetCreature via Traverse); " +
+                "CallMoveTo formation slots; registry OnEnable/Awake/AddInstance. Smoke: Hold LINE vs bum-rush.");
 #else
             _ = harmony;
             Plugin.Log.LogInfo("VALHEIM_REFS not set — Harmony MonsterAI patches skipped (stubs mode).");
@@ -34,7 +35,15 @@ namespace FactionTactics.HarmonyPatches
 
 #if VALHEIM_REFS
     /// <summary>
-    /// Postfix after vanilla UpdateAI: apply HoldGround / formation MoveTo from MemberIntent.
+    /// Postfix after vanilla UpdateAI: HoldGround / formation MoveTo + chase suppress for line Front.
+    /// Chase suppress (0.1.11) — documented tools:
+    ///   • Traverse <c>m_targetCreature</c> / <c>m_targetStatic</c> → null (primary): drops vanilla
+    ///     chase branch until UpdateTarget reacquires (~2s). Combined with <see cref="BaseAI_MoveTo_Patch"/>
+    ///     Prefix so interim MoveTo cannot bum-rush toward the player.
+    ///   • Traverse <c>m_lastKnownTargetPos</c> → formation slot (or self): stops ghost path to last player pos.
+    ///   • Public <c>SetHuntPlayer(false)</c> only when <c>HuntPlayer()</c> is already true.
+    ///   • Does NOT call <c>SetAlerted(false)</c>: alert is protected, re-set by HuntPlayer/UpdateTarget,
+    ///     and clearing it makes mobs look idle/passive mid-fight.
     /// </summary>
     [HarmonyPatch(typeof(MonsterAI))]
     public static class MonsterAI_UpdateAI_Patch
@@ -60,9 +69,19 @@ namespace FactionTactics.HarmonyPatches
             if (!TryResolveIntent(__instance, out var intent))
                 return;
 
+            var lineFront = IsLineFront(intent);
+
             if (intent.HoldGround)
             {
                 __instance.StopMoving();
+                // Hold line: face then clear hunt target (face needs target before suppress).
+                if (lineFront || intent.OrderKind == DoctrineOrderKind.Hold
+                    || intent.OrderKind == DoctrineOrderKind.ProtectMissiles
+                    || intent.OrderKind == DoctrineOrderKind.Advance)
+                {
+                    FaceThreatOrSlot(__instance, intent);
+                    SuppressVanillaChase(__instance, intent);
+                }
                 return;
             }
 
@@ -74,7 +93,6 @@ namespace FactionTactics.HarmonyPatches
                     dest = target.transform.position;
             }
 
-            var lineFront = IsLineFront(intent);
             if (lineFront && !intent.AllowVanillaChase)
             {
                 CallMoveTo(__instance, dt, dest, MoveArriveDist, intent.PreferRun);
@@ -84,6 +102,8 @@ namespace FactionTactics.HarmonyPatches
                 var dist = (float)Math.Sqrt(dx * dx + dz * dz);
                 if (dist < AdvanceStopDist)
                     __instance.StopMoving();
+                FaceThreatOrSlot(__instance, intent);
+                SuppressVanillaChase(__instance, intent);
                 return;
             }
 
@@ -97,7 +117,10 @@ namespace FactionTactics.HarmonyPatches
             }
         }
 
-        private static bool IsLineFront(MemberIntent intent)
+        /// <summary>
+        /// Front/Leader on ShieldWall/Line for Hold / Advance / ProtectMissiles.
+        /// </summary>
+        internal static bool IsLineFront(MemberIntent intent)
         {
             var role = intent.Role == SquadRole.Front || intent.Role == SquadRole.Leader;
             if (!role)
@@ -112,7 +135,59 @@ namespace FactionTactics.HarmonyPatches
             return order;
         }
 
-        private static bool TryResolveIntent(MonsterAI ai, out MemberIntent intent)
+        /// <summary>
+        /// Aggressive chase suppress for Hold/ProtectMissiles/Advance Front when !AllowVanillaChase.
+        /// See class summary for API choices.
+        /// </summary>
+        internal static void SuppressVanillaChase(MonsterAI ai, MemberIntent intent)
+        {
+            if (intent.AllowVanillaChase)
+                return;
+            try
+            {
+                var tr = Traverse.Create(ai);
+                tr.Field("m_targetCreature").SetValue(null);
+                tr.Field("m_targetStatic").SetValue(null);
+                var slot = intent.DesiredPosition;
+                if (slot == Vector3.zero)
+                    slot = ai.transform.position;
+                tr.Field("m_lastKnownTargetPos").SetValue(slot);
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log?.LogWarning(
+                    $"SuppressVanillaChase Traverse failed: {ex.GetType().Name}: {ex.Message}");
+            }
+
+            try
+            {
+                if (ai.HuntPlayer())
+                    ai.SetHuntPlayer(false);
+            }
+            catch
+            {
+                // HuntPlayer/SetHuntPlayer public on BaseAI — ignore rare failures
+            }
+        }
+
+        private static void FaceThreatOrSlot(MonsterAI ai, MemberIntent intent)
+        {
+            try
+            {
+                var target = ai.GetTargetCreature();
+                if (target != null)
+                {
+                    CallLookAt(ai, target.transform.position);
+                    return;
+                }
+            }
+            catch { /* fall through */ }
+
+            if (intent.DesiredPosition != Vector3.zero)
+                CallLookAt(ai, intent.DesiredPosition);
+        }
+
+        internal static bool TryResolveIntent(MonsterAI ai, out MemberIntent intent)
         {
             intent = null!;
             var ch = ValheimIds.GetCharacter(ai);
@@ -510,11 +585,44 @@ namespace FactionTactics.HarmonyPatches
     }
 
     /// <summary>
-    /// Optional BaseAI.MoveTo Prefix — intentionally unbound.
+    /// Prefix on protected <c>BaseAI.MoveTo</c>: block/redirect vanilla chase when doctrine owns steering.
+    /// HoldGround → skip MoveTo + StopMoving (formation hold).
+    /// Line Front / PreferKeepRange with !AllowVanillaChase → rewrite <c>point</c> to DesiredPosition.
     /// </summary>
+    [HarmonyPatch(typeof(BaseAI), "MoveTo")]
     public static class BaseAI_MoveTo_Patch
     {
-        // Intentionally unbound — do not add [HarmonyPatch] until needed.
+        [HarmonyPrefix]
+        public static bool MoveTo_Prefix(BaseAI __instance, float dt, ref Vector3 point, float dist, bool run)
+        {
+            if (!(__instance is MonsterAI mai))
+                return true;
+
+            if (!MonsterAI_UpdateAI_Patch.TryResolveIntent(mai, out var intent))
+                return true;
+
+            if (intent.AllowVanillaChase)
+                return true;
+
+            if (intent.HoldGround)
+            {
+                __instance.StopMoving();
+                return false; // skip vanilla MoveTo — prevents bum-rush this frame
+            }
+
+            var dest = intent.DesiredPosition;
+            if (dest == Vector3.zero)
+                return true;
+
+            var lineFront = MonsterAI_UpdateAI_Patch.IsLineFront(intent);
+            if (lineFront || intent.PreferKeepRange)
+            {
+                point = dest;
+                return true; // MoveTo formation slot instead of player
+            }
+
+            return true;
+        }
     }
 #endif
 }

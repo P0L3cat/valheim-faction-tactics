@@ -8,7 +8,8 @@ namespace FactionTactics.Doctrine
 {
     /// <summary>
     /// Skeleton* → Roman: shield wall + archers first, not charge-heavy.
-    /// Default Hold / ProtectMissiles / FocusFire under ShieldWall.
+    /// Default ProtectMissiles / FocusFire under ShieldWall when missiles + threat in range
+    /// (not eternal Hold). Front HoldGround; missiles PreferKeepRange.
     /// Advance only to close into the ~14–18m wall band; Charge almost never
     /// (nearest &lt; RomanChargeRange default 3.5m AND no missiles, or morale last resort).
     /// </summary>
@@ -90,18 +91,24 @@ namespace FactionTactics.Doctrine
             if (d > WallOuter || d > snapshot.AdvanceRange)
                 return DoctrineOrderKind.Advance;
 
-            // Inside ~14–18m (and closer): Hold wall and shoot.
+            // Inside ~14–18m (and closer): wall + missiles — never eternal Hold while threat in range.
             if (hasMissiles || preferRanged)
             {
-                // With missiles: FocusFire / ProtectMissiles; Hold line when closing past wall.
+                // With missiles: prefer ProtectMissiles (Front HoldGround) over FocusFire when
+                // threat is inside the wall band; missiles PreferKeepRange / FocusFire posture.
                 if (hasMissiles)
                 {
                     // Last-resort Charge only (preferRanged + missiles ⇒ almost never).
                     if (ShouldCharge(snapshot, hasMissiles: true, preferRanged, chargeBand))
                         return DoctrineOrderKind.Charge;
 
-                    // Shield wall + archers: ProtectMissiles / FocusFire — not Charge.
-                    if (snapshot.MissileThreatened || previous == DoctrineOrderKind.ProtectMissiles)
+                    // Threat in wall band → ProtectMissiles (Front holds line, missiles keep range).
+                    // FocusFire when still closing or missiles not yet threatened.
+                    if (d <= WallOuter
+                        && (snapshot.MissileThreatened
+                            || previous == DoctrineOrderKind.ProtectMissiles
+                            || previous == DoctrineOrderKind.FocusFire
+                            || d <= WallInner))
                         return DoctrineOrderKind.ProtectMissiles;
                     return DoctrineOrderKind.FocusFire;
                 }

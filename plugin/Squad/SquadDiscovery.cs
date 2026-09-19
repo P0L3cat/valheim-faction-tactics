@@ -62,6 +62,11 @@ namespace FactionTactics.Squad
         /// <summary>Last Discover() MonsterAI scan count before radius/doctrine filters.</summary>
         public int LastMonsterAiCount { get; private set; }
 
+        /// <summary>Peak MonsterAI count seen this session (suppresses stale empty-scan warnings).</summary>
+        public int LastPeakMonsterAiCount { get; private set; }
+
+        private bool _loggedEmptyEnumerateWarning;
+
         /// <summary>Last Harmony MonsterAI.UpdateAI postfix hits (lifetime).</summary>
         public long LastUpdateAIHits { get; private set; }
 
@@ -189,26 +194,53 @@ namespace FactionTactics.Squad
                 });
             }
             LastCandidateCount = list.Count;
+            if (LastMonsterAiCount > LastPeakMonsterAiCount)
+                LastPeakMonsterAiCount = LastMonsterAiCount;
 
             // Loud diagnostics: 0.1.9 smoke had updateAIHits climbing while monsterAI/candidates stayed 0.
+            // 0.1.11: suppress false warning when a later/live path already has MAs
+            // (stale LastScan after double Discover, or registry/ownership filled after an empty pass).
             if (LastUpdateAIHits > 0 && LastMonsterAiCount == 0)
             {
-                Plugin.Log?.LogWarning(
-                    $"SquadDiscovery 0.1.10: updateAIHits={LastUpdateAIHits} but EnumerateMonsterAIs=0 " +
-                    $"(registry={LastRegistry} scene={LastSceneInstances} prefabMai={LastPrefabMai}). " +
-                    "Ownership live cache / BaseAI.Instances harvest should feed discovery.");
+                var liveReg = 0;
+                var liveOwn = 0;
+                try { liveReg = FactionTactics.HarmonyPatches.MonsterAIRegistry.Count; } catch { /* ignore */ }
+#if VALHEIM_REFS
+                try { liveOwn = FactionTactics.Dedicated.EnemyOwnershipDirector.LastEnemyMai; } catch { /* ignore */ }
+#endif
+                var liveScan = ValheimWorldScan.LastScanMonsterAiCount;
+                if (liveReg > 0 || liveOwn > 0 || liveScan > 0 || LastPeakMonsterAiCount > 0)
+                {
+                    // Capture already works elsewhere — do not spam false empty warning.
+                    if (PluginConfig.DebugLogging?.Value == true)
+                    {
+                        Plugin.Log?.LogDebug(
+                            $"SquadDiscovery 0.1.11: skip empty-enumerate warn " +
+                            $"(updateAIHits={LastUpdateAIHits} thisScan=0 liveReg={liveReg} liveOwn={liveOwn} " +
+                            $"liveScan={liveScan} peak={LastPeakMonsterAiCount}).");
+                    }
+                }
+                else if (!_loggedEmptyEnumerateWarning)
+                {
+                    _loggedEmptyEnumerateWarning = true;
+                    Plugin.Log?.LogWarning(
+                        $"SquadDiscovery 0.1.11: updateAIHits={LastUpdateAIHits} but EnumerateMonsterAIs=0 " +
+                        $"(registry={LastRegistry} scene={LastSceneInstances} prefabMai={LastPrefabMai}). " +
+                        "Ownership live cache / BaseAI.Instances harvest should feed discovery.");
+                }
             }
             else if (LastMonsterAiCount > 0 && LastCandidateCount == 0)
             {
                 Plugin.Log?.LogWarning(
-                    $"SquadDiscovery 0.1.10: monsterAI={LastMonsterAiCount} but candidates=0 " +
+                    $"SquadDiscovery 0.1.11: monsterAI={LastMonsterAiCount} but candidates=0 " +
                     $"(dead={skippedDead} radius={skippedRadius} prefabMiss={skippedPrefab} " +
                     $"players={LastPlayerCount} radiusM={discoveryRadius} samplePrefabs=[{string.Join(",", prefabSamples)}]).");
             }
             else if (LastCandidateCount > 0)
             {
+                _loggedEmptyEnumerateWarning = false; // allow re-warn if discovery later goes empty again
                 Plugin.Log?.LogInfo(
-                    $"SquadDiscovery 0.1.10: candidates={LastCandidateCount} monsterAI={LastMonsterAiCount} " +
+                    $"SquadDiscovery 0.1.11: candidates={LastCandidateCount} monsterAI={LastMonsterAiCount} " +
                     $"registry={LastRegistry} players={LastPlayerCount} (Roman/doctrine match OK).");
             }
 #else

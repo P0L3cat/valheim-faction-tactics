@@ -427,7 +427,30 @@ namespace FactionTactics.Squad
             if (engaged > 0)
                 assessment.ThreatCount = 1;
             assessment.NearestDistance = nearest;
-            assessment.MissileThreatened = engaged > 0 && nearest < 12f
+
+            // Player proximity as threat when AI targets not yet acquired (avoids eternal Hold).
+            try
+            {
+                var players = ValheimWorldScan.CollectPlayerPositions();
+                if (players.Count > 0 && alivePos > 0)
+                {
+                    foreach (var pp in players)
+                    {
+                        var d = Vector3.Distance(centroid, pp);
+                        if (d < nearest)
+                            nearest = d;
+                    }
+                    if (nearest < float.MaxValue && nearest <= 48f)
+                    {
+                        if (assessment.ThreatCount <= 0)
+                            assessment.ThreatCount = 1;
+                        assessment.NearestDistance = nearest;
+                    }
+                }
+            }
+            catch { /* keep engaged-only assessment */ }
+
+            assessment.MissileThreatened = assessment.ThreatCount > 0 && nearest < 12f
                 && squad.Members.Exists(m => m.AssignedRole == SquadRole.Missile);
 
             assessment.TargetIsolated = engaged > 0 && alivePos >= 3

@@ -59,3 +59,17 @@ Fixes:
 - Loud SquadDiscovery logs when UpdateAI hits but candidates stay 0.
 
 Success: `monsterAI`/`candidates`/`squads`/`orders` non-zero for ~8 skeletons near a peer (Roman Hold/ProtectMissiles).
+
+
+## 0.1.11 hold-line steering
+
+Live 0.1.10: capture worked (`monsterAI=8` / `squads=1` / `orders=[Hold]` / `registry=8`) but Nate still saw vanilla bum-rush — postfix `StopMoving` alone does not override chase.
+
+Fixes:
+- `BaseAI.MoveTo` **Prefix**: HoldGround skips MoveTo; line Front / PreferKeepRange redirects `point` → formation slot.
+- `MonsterAI.UpdateAI` postfix: after StopMoving/CallMoveTo, **SuppressVanillaChase** — Traverse clear `m_targetCreature` / `m_targetStatic`, set `m_lastKnownTargetPos` to slot; `SetHuntPlayer(false)` only if hunting; **no** `SetAlerted(false)`.
+- RomanDoctrine: missiles + threat in wall band → prefer **ProtectMissiles** (not eternal Hold); Charge still rare.
+- OrderApplicator: Front Hold/ProtectMissiles → `HoldGround=true`, `DesiredPosition` = threat-facing formation slot; missiles PreferKeepRange (no HoldGround).
+- SquadDiscovery: suppress false `updateAIHits>0 but EnumerateMonsterAIs=0` when registry/ownership/peak already has MAs.
+
+Success: same spawn shows orders progressing (Hold/ProtectMissiles/FocusFire) and Nate feels a line instead of a bum-rush.
