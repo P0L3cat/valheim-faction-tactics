@@ -104,6 +104,16 @@ namespace UnityEngine
         public static Vector3 operator +(Vector3 a, Vector3 b) => new Vector3(a.x + b.x, a.y + b.y, a.z + b.z);
         public static Vector3 operator -(Vector3 a, Vector3 b) => new Vector3(a.x - b.x, a.y - b.y, a.z - b.z);
         public static Vector3 operator *(Vector3 a, float s) => new Vector3(a.x * s, a.y * s, a.z * s);
+        public static float Dot(Vector3 a, Vector3 b) => a.x * b.x + a.y * b.y + a.z * b.z;
+        public float sqrMagnitude => x * x + y * y + z * z;
+        public Vector3 normalized
+        {
+            get
+            {
+                var m = (float)Math.Sqrt(x * x + y * y + z * z);
+                return m < 1e-8f ? zero : new Vector3(x / m, y / m, z / m);
+            }
+        }
     }
 
     public static class Time

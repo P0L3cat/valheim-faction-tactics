@@ -10,6 +10,8 @@ namespace FactionTactics.Config
         public static ConfigEntry<float> DiscoveryRadius { get; private set; } = null!;
         public static ConfigEntry<float> SquadClusterRadius { get; private set; } = null!;
         public static ConfigEntry<bool> EnableRoman { get; private set; } = null!;
+        public static ConfigEntry<float> RomanChargeRange { get; private set; } = null!;
+        public static ConfigEntry<bool> RomanPreferRanged { get; private set; } = null!;
         public static ConfigEntry<bool> EnableAmbush { get; private set; } = null!;
         public static ConfigEntry<bool> EnableVikingShieldWall { get; private set; } = null!;
         public static ConfigEntry<bool> EnableSteppe { get; private set; } = null!;
@@ -30,6 +32,20 @@ namespace FactionTactics.Config
         public static ConfigEntry<bool> EnableSiegeViking { get; private set; } = null!;
 
         public static ConfigEntry<bool> DebugLogging { get; private set; } = null!;
+        public static ConfigEntry<bool> HeartbeatLogging { get; private set; } = null!;
+
+        // --- Dedicated enemy ownership PoC (0.1.9) ---
+        public static ConfigEntry<bool> EnableEnemyServerOwnership { get; private set; } = null!;
+        public static ConfigEntry<float> EnemyOwnershipIntervalSeconds { get; private set; } = null!;
+        public static ConfigEntry<int> EnemyOwnershipMaxCreatesPerTick { get; private set; } = null!;
+
+        // --- TEMP Black Forest ambush ambience (troubleshooting wire) ---
+        public static ConfigEntry<bool> EnableAmbushAmbienceTemp { get; private set; } = null!;
+        public static ConfigEntry<string> AmbushAmbienceFogEnvironment { get; private set; } = null!;
+        public static ConfigEntry<string> AmbushAmbienceMessage { get; private set; } = null!;
+        public static ConfigEntry<float> AmbushAmbienceMessageCooldownSeconds { get; private set; } = null!;
+        public static ConfigEntry<float> AmbushAmbiencePlayerRange { get; private set; } = null!;
+        public static ConfigEntry<int> AmbushAmbienceMinSquadSize { get; private set; } = null!;
 
         public static void Bind(ConfigFile config)
         {
@@ -54,7 +70,7 @@ namespace FactionTactics.Config
             DiscoveryRadius = config.Bind(
                 "Squad",
                 "DiscoveryRadius",
-                40f,
+                64f,
                 "Max distance from any local player when scanning for faction allies. "
                 + "Distinct from SquadClusterRadius (how tight a squad groups).");
 
@@ -69,6 +85,21 @@ namespace FactionTactics.Config
                 "EnableRoman",
                 true,
                 "Skeleton* → Roman doctrine.");
+
+                        RomanChargeRange = config.Bind(
+                "Doctrine",
+                "RomanChargeRange",
+                3.5f,
+                "Roman: max charge commit distance (m). Effective = min(snapshot ChargeRange, this). "
+                + "Default 3.5 — Charge almost never; shield wall + archers first.");
+
+            RomanPreferRanged = config.Bind(
+                "Doctrine",
+                "RomanPreferRanged",
+                true,
+                "Roman: prefer Hold/ProtectMissiles/FocusFire under ShieldWall. "
+                + "Charge only when nearest < RomanChargeRange and (no missiles left or last-resort morale).");
+
 
             EnableAmbush = config.Bind(
                 "Doctrine",
@@ -172,6 +203,71 @@ namespace FactionTactics.Config
                 "DebugLogging",
                 false,
                 "Verbose squad/order logging.");
+
+            HeartbeatLogging = config.Bind(
+                "Debug",
+                "HeartbeatLogging",
+                true,
+                "Periodic (~15s) LogInfo of squad count, top order kinds, MonsterAI candidates, player count. "
+                + "Default true for smoke tests; set false once discovery is confirmed.");
+
+            EnableEnemyServerOwnership = config.Bind(
+                "Dedicated",
+                "EnableEnemyServerOwnership",
+                true,
+                "PoC (0.1.9): on dedicated/server, claim ZDO ownership for enemy prefabs (ValheimWorldScan "
+                + "KnownEnemyPrefabs) near connected peers and reflect-call ZNetScene.CreateObject when "
+                + "FindInstance is null so MonsterAI.UpdateAI can run server-side. Does NOT take trees/"
+                + "buildings/ships. Default true for PoC; disable if clients desync or CPU spikes. "
+                + "See docs/ENEMY-OWNERSHIP-POC.md.");
+
+            EnemyOwnershipIntervalSeconds = config.Bind(
+                "Dedicated",
+                "EnemyOwnershipIntervalSeconds",
+                1.0f,
+                "Seconds between EnemyOwnershipDirector scans (peer FindSectorObjects + SetOwner/Create).");
+
+            EnemyOwnershipMaxCreatesPerTick = config.Bind(
+                "Dedicated",
+                "EnemyOwnershipMaxCreatesPerTick",
+                16,
+                "Max ZNetScene.CreateObject calls per ownership pass (avoids hitching).");
+
+            EnableAmbushAmbienceTemp = config.Bind(
+                "AmbushAmbienceTemp",
+                "EnableAmbushAmbienceTemp",
+                true,
+                "TEMP wire for BF ambush troubleshooting; disable for proper silent ambush.");
+
+            AmbushAmbienceFogEnvironment = config.Bind(
+                "AmbushAmbienceTemp",
+                "AmbushAmbienceFogEnvironment",
+                "Misty",
+                "EnvMan force env name (empty = skip fog).");
+
+            AmbushAmbienceMessage = config.Bind(
+                "AmbushAmbienceTemp",
+                "AmbushAmbienceMessage",
+                "the hair on your neck stands up",
+                "Center message shown once per player per cooldown when a qualifying Ambush squad is nearby.");
+
+            AmbushAmbienceMessageCooldownSeconds = config.Bind(
+                "AmbushAmbienceTemp",
+                "AmbushAmbienceMessageCooldownSeconds",
+                90f,
+                "Seconds before the neck-hair message may fire again for the same player.");
+
+            AmbushAmbiencePlayerRange = config.Bind(
+                "AmbushAmbienceTemp",
+                "AmbushAmbiencePlayerRange",
+                40f,
+                "Max distance (m) from an Ambush member/centroid to a player to trigger ambience.");
+
+            AmbushAmbienceMinSquadSize = config.Bind(
+                "AmbushAmbienceTemp",
+                "AmbushAmbienceMinSquadSize",
+                3,
+                "Minimum alive Ambush (Greydwarf) squad size before ambience can fire.");
         }
     }
 }

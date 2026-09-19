@@ -4,7 +4,9 @@ using FactionTactics.Commander;
 using FactionTactics.Config;
 using FactionTactics.Doctrine;
 using FactionTactics.Orders;
+using FactionTactics.Util;
 using FactionTactics.Siege;
+using FactionTactics.Ambience;
 using UnityEngine;
 
 namespace FactionTactics.Squad
@@ -30,10 +32,13 @@ namespace FactionTactics.Squad
         private readonly IActionScorer _actionScorer;
         private readonly OrderApplicator _applicator;
         private readonly SiegeDirector _siege;
+        private readonly AmbushAmbienceDirector _ambience;
 
         private readonly List<SquadUnit> _active = new List<SquadUnit>();
         private readonly List<SquadRuntimeState> _runtime = new List<SquadRuntimeState>();
         private int _nextStableSerial;
+        private float _heartbeatAge;
+        private const float HeartbeatIntervalSeconds = 15f;
 
         public SquadDirector(
             ISquadDiscovery discovery,
@@ -42,7 +47,8 @@ namespace FactionTactics.Squad
             IRoleScorer roleScorer,
             IActionScorer actionScorer,
             OrderApplicator applicator,
-            SiegeDirector? siege = null)
+            SiegeDirector? siege = null,
+            AmbushAmbienceDirector? ambience = null)
         {
             _discovery = discovery;
             _commander = commander;
@@ -51,6 +57,7 @@ namespace FactionTactics.Squad
             _actionScorer = actionScorer;
             _applicator = applicator;
             _siege = siege ?? new SiegeDirector();
+            _ambience = ambience ?? new AmbushAmbienceDirector();
         }
 
         public IReadOnlyList<SquadUnit> ActiveSquads => _active;
@@ -110,6 +117,11 @@ namespace FactionTactics.Squad
 
                 order = MaybeRescoreOrder(order, snapshot);
                 squad.CurrentOrder = order;
+                if (state.PreviousOrderKind != order.OrderKind)
+                {
+                    state.OrderAgeSeconds = 0f;
+                    squad.OrderAgeSeconds = 0f;
+                }
                 squad.PreviousOrderKind = order.OrderKind;
                 state.PreviousOrderKind = order.OrderKind;
                 _applicator.Apply(squad, order);
@@ -127,6 +139,105 @@ namespace FactionTactics.Squad
 
             PruneUnseenRuntime(seen);
             _ = _registry;
+            _ambience.Tick(_active);
+            MaybeLogHeartbeat(dt);
+        }
+
+        private void MaybeLogHeartbeat(float dt)
+        {
+            var debug = PluginConfig.DebugLogging?.Value == true;
+            var beat = PluginConfig.HeartbeatLogging?.Value == true;
+            if (!debug && !beat)
+                return;
+
+            _heartbeatAge += dt;
+            if (_heartbeatAge < HeartbeatIntervalSeconds)
+                return;
+            _heartbeatAge = 0f;
+
+            var registry = 0;
+            var findAll = 0;
+            var findObjects = 0;
+            var sceneInstances = 0;
+            var prefabZdos = 0;
+            var prefabLive = 0;
+            var prefabMai = 0;
+            var updateAIHits = 0L;
+            var baseAIUpdateHits = 0L;
+            var monsterAi = 0;
+            var candidates = 0;
+            if (_discovery is SquadDiscovery sd)
+            {
+                registry = sd.LastRegistry;
+                findAll = sd.LastFindAll;
+                findObjects = sd.LastFindObjects;
+                sceneInstances = sd.LastSceneInstances;
+                prefabZdos = sd.LastPrefabZdos;
+                prefabLive = sd.LastPrefabLive;
+                prefabMai = sd.LastPrefabMai;
+                updateAIHits = sd.LastUpdateAIHits;
+                baseAIUpdateHits = sd.LastBaseAIUpdateHits;
+                monsterAi = sd.LastMonsterAiCount;
+                candidates = sd.LastCandidateCount;
+            }
+
+#if VALHEIM_REFS
+            try
+            {
+                if (sceneInstances > 0)
+                    ValheimWorldScan.MaybeDumpSceneInstances(force: true);
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log?.LogWarning($"sceneDump heartbeat failed: {ex.GetType().Name}: {ex.Message}");
+            }
+#endif
+
+            var orderCounts = new Dictionary<string, int>();
+            var formationCounts = new Dictionary<string, int>();
+            foreach (var s in _active)
+            {
+                var kind = s.CurrentOrder?.OrderKind.ToString() ?? "none";
+                orderCounts[kind] = orderCounts.TryGetValue(kind, out var c) ? c + 1 : 1;
+                var form = s.CurrentOrder?.Formation.ToString() ?? "none";
+                formationCounts[form] = formationCounts.TryGetValue(form, out var fc) ? fc + 1 : 1;
+            }
+
+            var topOrders = "none";
+            if (orderCounts.Count > 0)
+            {
+                var parts = new List<string>();
+                foreach (var kv in orderCounts)
+                    parts.Add($"{kv.Key}={kv.Value}");
+                parts.Sort(StringComparer.Ordinal);
+                topOrders = string.Join(",", parts);
+            }
+
+            var topForms = "none";
+            if (formationCounts.Count > 0)
+            {
+                var fparts = new List<string>();
+                foreach (var kv in formationCounts)
+                    fparts.Add($"{kv.Key}={kv.Value}");
+                fparts.Sort(StringComparer.Ordinal);
+                topForms = string.Join(",", fparts);
+            }
+
+            var enemyOwned = 0;
+            var enemyLive = 0;
+            var enemyMai = 0;
+#if VALHEIM_REFS
+            enemyOwned = FactionTactics.Dedicated.EnemyOwnershipDirector.LastEnemyOwned;
+            enemyLive = FactionTactics.Dedicated.EnemyOwnershipDirector.LastEnemyLive;
+            enemyMai = FactionTactics.Dedicated.EnemyOwnershipDirector.LastEnemyMai;
+#endif
+            Plugin.Log?.LogInfo(
+                $"FactionTactics heartbeat: squads={_active.Count} orders=[{topOrders}] " +
+                $"formations=[{topForms}] baseAIUpdateHits={baseAIUpdateHits} updateAIHits={updateAIHits} " +
+                $"registry={registry} findAll={findAll} findObjects={findObjects} " +
+                $"sceneInstances={sceneInstances} prefabZdos={prefabZdos} prefabLive={prefabLive} prefabMai={prefabMai} " +
+                $"monsterAI={monsterAi} candidates={candidates} " +
+                $"enemyOwned={enemyOwned} enemyLive={enemyLive} enemyMai={enemyMai}");
         }
 
         private SquadRuntimeState MatchOrCreateRuntime(SquadUnit squad)
@@ -165,7 +276,9 @@ namespace FactionTactics.Squad
         private static void ApplyRuntimeToSquad(SquadUnit squad, SquadRuntimeState state, float dt)
         {
             state.AgeSeconds += dt;
+            state.OrderAgeSeconds += dt;
             squad.AgeSeconds = state.AgeSeconds;
+            squad.OrderAgeSeconds = state.OrderAgeSeconds;
             squad.PreviousOrderKind = state.PreviousOrderKind;
             squad.SquadId = state.StableId;
             squad.PeakAlive = state.PeakAlive;
@@ -449,11 +562,11 @@ namespace FactionTactics.Squad
         {
             try
             {
-                var ais = UnityEngine.Object.FindObjectsOfType<MonsterAI>();
+                var ais = FactionTactics.Util.ValheimWorldScan.EnumerateMonsterAIs();
                 int count = 0;
                 foreach (var ai in ais)
                 {
-                    var ch = ai.m_character;
+                    var ch = ValheimIds.GetCharacter(ai);
                     if (ch == null || ch.IsDead())
                         continue;
                     var prefab = ch.name.Replace("(Clone)", "").Trim();
@@ -480,12 +593,12 @@ namespace FactionTactics.Squad
                 return;
 
             var range = TrollFortressHelper.SynergyRange;
-            var ais = UnityEngine.Object.FindObjectsOfType<MonsterAI>();
+            var ais = FactionTactics.Util.ValheimWorldScan.EnumerateMonsterAIs();
             int count = 0;
             float nearest = float.MaxValue;
             foreach (var ai in ais)
             {
-                var ch = ai.m_character;
+                var ch = ValheimIds.GetCharacter(ai);
                 if (ch == null || ch.IsDead())
                     continue;
                 var prefab = ch.name.Replace("(Clone)", "").Trim();

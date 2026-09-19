@@ -90,6 +90,8 @@ Stance bias: **high anxiety, low slugfest** (break contact early vs Roman).
 - **Lone troll** (no greys): **no** Faction Tactics override — trolls are not registered as a doctrine pack.
 - Implementation: `TrollFortressHelper` + snapshot fields filled by `SquadDirector`; Ambush FSM consults helper first. Route 2 scorers may read the same fields; default remains `NullScorer`. Route 3 `ICommander` untouched.
 
+### TEMP Ambush ambience (`AmbushAmbienceTemp`)
+Troubleshooting wire, **not** the proper silent ambush. When a qualifying Ambush squad (≥ `AmbushAmbienceMinSquadSize`) is within `AmbushAmbiencePlayerRange` of a player (Black Forest preferred), `AmbushAmbienceDirector` may `EnvMan.SetForceEnvironment` (`AmbushAmbienceFogEnvironment`, default `Misty`) and show a per-player center message (cooldown). Fog clears via `SetForceEnvironment("")` when no threat remains or the flag is off. **Disable with `EnableAmbushAmbienceTemp=false`.**
 
 ## Siege Assault v1 (Assault only)
 
@@ -155,7 +157,7 @@ Faction Tactics **does not** create encounters. It does not spawn creatures, que
 - Server-authoritative dedicated host (apply AI overrides on the machine that owns the mobs).
 - Per-mob `MonsterAI`; we add **squad intent**, not per-frame neural nets.
 - Min squad size gate → else vanilla AI.
-- HarmonyX on BepInEx 5; patch hypotheses documented in `HarmonyPatches` with TODOs until validated in-game.
+- HarmonyX on BepInEx 5; `MonsterAIPatches` wired against verified `BaseAI.MoveTo` / `StopMoving` / `MonsterAI.UpdateAI` (VALHEIM_REFS). Stable member ids: `ValheimIds.ToLong(ZDOID)`. **Needs in-game smoke test.**
 
 ## Config (BepInEx)
 - Enable/disable plugin
@@ -168,6 +170,7 @@ Faction Tactics **does not** create encounters. It does not spawn creatures, que
 - `DvergrSoftenRange` (InsectSiege soften)
 - Siege Assault: `EnableSiegeAssault`, `WorkbenchTriggerRange`, `SiegeMinSquadSize`, `EnableSiegeAmbush`, `EnableSiegeViking`
 - Debug logging
+- TEMP Ambush ambience (`AmbushAmbienceTemp`): `EnableAmbushAmbienceTemp` (disable for silent ambush), fog env, message, cooldown, player range, min squad size
 
 ## Install / packaging
 - Build output → `BepInEx/plugins/FactionTactics/` (or flat `FactionTactics.dll` + optional `plugins` folder)
@@ -176,7 +179,7 @@ Faction Tactics **does not** create encounters. It does not spawn creatures, que
 
 ## Compile strategy without game DLLs
 - Core namespaces (`Doctrine`, `Squad`, `Orders`, `Commander`, `Config`) have **zero** Valheim assembly references.
-- `HarmonyPatches` + game adapters compile under `VALHEIM_REFS` when `ValheimDir` points at a real install.
+- `HarmonyPatches` + game adapters compile under `VALHEIM_REFS` when `ValheimDir` points at a real install (Linux-friendly `/` paths; see `refs/README.md`).
 - Without refs: `Stubs/` provides minimal stand-ins so the solution stays coherent; patches are `#if VALHEIM_REFS` gated.
 
 ## Namespace map
@@ -185,9 +188,16 @@ FactionTactics                 Plugin entry
 FactionTactics.Doctrine        Packs, roles, order kinds, TrollFortressHelper
 FactionTactics.Squad           Director, discovery, scorers, snapshot
 FactionTactics.Siege           SiegeDirector, AssaultStance (Assault v1)
+FactionTactics.Ambience        AmbushAmbienceDirector (TEMP BF fog + neck-hair; config-gated)
 FactionTactics.Orders          SquadOrder DTO, applicator
 FactionTactics.Commander       ICommander, ScriptedCommander
-FactionTactics.HarmonyPatches  MonsterAI Harmony stubs/TODOs
+FactionTactics.Util             ValheimIds ZDOID→long packing
+FactionTactics.HarmonyPatches  MonsterAI UpdateAI MoveTo/StopMoving (VALHEIM_REFS)
 FactionTactics.Config          BepInEx bindings
 FactionTactics.Stubs           Compile-without-game-DLLs types
 ```
+
+## Related design
+- Territory + clans (design only): [docs/TERRITORY-ONEPAGER.md](docs/TERRITORY-ONEPAGER.md)
+
+- Product roadmap: [docs/ROADMAP.md](docs/ROADMAP.md)

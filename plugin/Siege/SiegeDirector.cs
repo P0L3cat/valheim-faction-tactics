@@ -183,21 +183,15 @@ namespace FactionTactics.Siege
         /// <summary>
         /// Players within assault bubble (workbench range around squad centroid).
         /// Drives role-split vs vanilla-structure light-touch.
-        /// TODO(hypothesis): Player.GetAllPlayers is cheaper — prefer when available in-game.
+        /// Dedicated: Character.IsPlayer / ZNet player list positions (not FindObjectsOfType).
         /// </summary>
         private static void DetectPlayersNearAssault(Vector3 centroid, float range, ThreatAssessment assessment)
         {
             try
             {
-                var players = UnityEngine.Object.FindObjectsOfType<Player>();
-                foreach (var pl in players)
+                foreach (var pos in FactionTactics.Util.ValheimWorldScan.CollectPlayerPositions())
                 {
-                    if (pl == null)
-                        continue;
-                    Character ch = pl;
-                    if (ch.IsDead())
-                        continue;
-                    if (Vector3.Distance(centroid, ch.transform.position) <= range)
+                    if (Vector3.Distance(centroid, pos) <= range)
                     {
                         assessment.PlayersNearAssault = true;
                         return;

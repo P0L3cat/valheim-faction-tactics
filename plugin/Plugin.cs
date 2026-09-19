@@ -7,7 +7,9 @@ using FactionTactics.Doctrine;
 using FactionTactics.HarmonyPatches;
 using FactionTactics.Orders;
 using FactionTactics.Siege;
+using FactionTactics.Ambience;
 using FactionTactics.Squad;
+using FactionTactics.Dedicated;
 using HarmonyLib;
 
 #if !VALHEIM_REFS
@@ -21,13 +23,16 @@ namespace FactionTactics
     {
         public const string PluginGuid = "com.nate.factiontactics";
         public const string PluginName = "FactionTactics";
-        public const string PluginVersion = "0.1.0";
+        public const string PluginVersion = "0.1.9";
 
         internal static Plugin Instance { get; private set; } = null!;
         internal static ManualLogSource Log { get; private set; } = null!;
 
         private Harmony? _harmony;
         private SquadDirector? _director;
+#if VALHEIM_REFS
+        private EnemyOwnershipDirector? _enemyOwnership;
+#endif
         private float _tickAccumulator;
 
         private void Awake()
@@ -39,6 +44,7 @@ namespace FactionTactics
 
             var registry = DoctrinePackRegistry.CreateDefault();
             var siege = new SiegeDirector();
+            var ambience = new AmbushAmbienceDirector();
             ICommander commander = new ScriptedCommander(registry, siege);
             IRoleScorer roleScorer = new NullRoleScorer();
             IActionScorer actionScorer = new NullActionScorer();
@@ -52,13 +58,17 @@ namespace FactionTactics
                 roleScorer,
                 actionScorer,
                 applicator,
-                siege);
+                siege,
+                ambience);
+#if VALHEIM_REFS
+            _enemyOwnership = new EnemyOwnershipDirector();
+#endif
 
             if (PluginConfig.EnablePlugin.Value)
             {
                 _harmony = new Harmony(PluginGuid);
                 MonsterAIPatches.Apply(_harmony);
-                Log.LogInfo($"{PluginName} {PluginVersion} loaded (doctrine packs + Siege Assault v1). Tick={PluginConfig.TickIntervalSeconds.Value}s");
+                Log.LogInfo($"{PluginName} {PluginVersion} loaded (doctrine packs + Siege Assault v1 + enemy-ownership PoC). Tick={PluginConfig.TickIntervalSeconds.Value}s");
             }
             else
             {
@@ -81,6 +91,16 @@ namespace FactionTactics
                 return;
 
             _tickAccumulator = 0f;
+#if VALHEIM_REFS
+            try
+            {
+                _enemyOwnership?.Tick(interval);
+            }
+            catch (Exception ex)
+            {
+                Log.LogError($"EnemyOwnershipDirector tick failed: {ex}");
+            }
+#endif
             try
             {
                 _director.Tick(interval);

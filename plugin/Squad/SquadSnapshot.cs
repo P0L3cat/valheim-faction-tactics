@@ -81,6 +81,12 @@ namespace FactionTactics.Squad
 
         public string? PreviousOrderKind { get; set; }
 
+        /// <summary>
+        /// Seconds spent on <see cref="PreviousOrderKind"/> (order age).
+        /// Ambush uses this to require Flank age &gt; 3s before rare envelope flash.
+        /// </summary>
+        public float AgeSeconds { get; set; }
+
         public int CountByRole(SquadRole role)
         {
             var key = role.ToString();
@@ -139,6 +145,7 @@ namespace FactionTactics.Squad
                 ChargeRange = charge,
                 Roles = roles,
                 PreviousOrderKind = squad.PreviousOrderKind?.ToString(),
+                AgeSeconds = squad.OrderAgeSeconds,
             };
         }
 
@@ -146,6 +153,8 @@ namespace FactionTactics.Squad
         {
             switch (doctrineId)
             {
+                case "roman":
+                    return (28f, 3.5f);
                 case "ambush":
                     return (16f, 9f);
                 case "viking-shieldwall":

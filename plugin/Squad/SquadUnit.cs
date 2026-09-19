@@ -14,6 +14,9 @@ namespace FactionTactics.Squad
         public DoctrineOrderKind? PreviousOrderKind { get; set; }
         public float AgeSeconds { get; set; }
 
+        /// <summary>Seconds on current PreviousOrderKind (for Flank-age flash gate).</summary>
+        public float OrderAgeSeconds { get; set; }
+
         /// <summary>Highest alive/roster count tracked for this cluster (diagnostics / tests).</summary>
         public int PeakAlive { get; set; }
 

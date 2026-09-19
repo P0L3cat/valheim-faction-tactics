@@ -10,9 +10,13 @@ namespace FactionTactics.Orders
     ///   • Wall-breakers (Front / Leader / melee Flanker) → press structure / TestBreach
     ///   • Missiles → FocusWallman cover (ProtectMissiles / FocusFire on players threatening breachers)
     /// Quiet assault (AllowVanillaStructure): light-touch — PreferAllowVanillaStructure, don't override chase away from pieces.
+    /// ShieldWall/Line slots are oriented centroid→threat (right = lateral, forward = depth).
     /// </summary>
     public sealed class OrderApplicator
     {
+        /// <summary>Front/Leader snaps to HoldGround when within this of their slot (meters).</summary>
+        public const float FrontHoldSlotDist = 2.5f;
+
         /// <summary>Last applied order keyed by MonsterAI instance id (or hash).</summary>
         public static readonly System.Collections.Concurrent.ConcurrentDictionary<long, MemberIntent> Intents
             = new System.Collections.Concurrent.ConcurrentDictionary<long, MemberIntent>();
@@ -23,8 +27,14 @@ namespace FactionTactics.Orders
             var doctrineId = squad.Doctrine?.Id ?? "";
             var jelly = string.Equals(doctrineId, "artillery-jelly", System.StringComparison.OrdinalIgnoreCase);
             var charred = string.Equals(doctrineId, "charred-legion", System.StringComparison.OrdinalIgnoreCase);
+            var roman = string.Equals(doctrineId, "roman", System.StringComparison.OrdinalIgnoreCase);
+            var ambush = string.Equals(doctrineId, "ambush", System.StringComparison.OrdinalIgnoreCase);
             var index = 0;
             var count = squad.Members.Count;
+
+            // Threat-facing basis for ShieldWall / Line (centroid → threat / nearest player).
+            var threatPos = TryGetSquadThreatPosition(squad, centroid);
+            BuildFacingBasis(centroid, threatPos, out var right, out var forward);
 
             foreach (var member in squad.Members)
             {
@@ -44,10 +54,19 @@ namespace FactionTactics.Orders
                     centroid,
                     member.Position,
                     isCavalry,
-                    isArtillery || jelly);
+                    isArtillery || jelly,
+                    right,
+                    forward);
+
+                var ambushHarassment = ambush
+                    && (order.OrderKind == DoctrineOrderKind.Flank
+                        || order.OrderKind == DoctrineOrderKind.Kite
+                        || order.OrderKind == DoctrineOrderKind.FocusFire
+                        || order.OrderKind == DoctrineOrderKind.ProtectMissiles);
 
                 var keepRange = jelly
                     || order.OrderKind == DoctrineOrderKind.Kite
+                    || ambushHarassment
                     || (isArtillery && order.OrderKind != DoctrineOrderKind.Charge);
 
                 // --- Siege Assault role split ---
@@ -70,6 +89,15 @@ namespace FactionTactics.Orders
                 if (assaultMissileCover)
                     keepRange = true;
 
+                // Roman archers: PreferKeepRange on wall / fire orders (rear slots).
+                if (roman && isMissile
+                    && (order.OrderKind == DoctrineOrderKind.FocusFire
+                        || order.OrderKind == DoctrineOrderKind.ProtectMissiles
+                        || order.OrderKind == DoctrineOrderKind.Hold
+                        || order.OrderKind == DoctrineOrderKind.Advance))
+                    keepRange = true;
+
+
                 // Cavalry / Asksvin: never HoldGround in the rank; always allow skirmish chase on Flank.
                 var holdGround = !isCavalry
                     && !isWallBreaker // wall-breakers must leave formation slots to press pieces
@@ -78,6 +106,10 @@ namespace FactionTactics.Orders
 
                 // Missiles on FocusWallman may hold/skirmish rear while fronts breach.
                 if (assaultMissileCover)
+                    holdGround = false;
+
+                // Ambush flankers never HoldGround — stay mobile on the orbit.
+                if (ambush && member.AssignedRole == SquadRole.Flanker)
                     holdGround = false;
 
                 var allowChase = !keepRange
@@ -90,6 +122,11 @@ namespace FactionTactics.Orders
                     allowChase = true;
                 if (jelly)
                     allowChase = false;
+
+                // Ambush doctrine: AllowVanillaChase only on the rare Charge flash.
+                // Flank/Kite/FocusFire/ProtectMissiles keep PreferKeepRange and no chase.
+                if (ambush)
+                    allowChase = order.OrderKind == DoctrineOrderKind.Charge;
 
                 // Siege: hot wall-breakers chase / press (TestBreach).
                 // Quiet assault (AllowVanillaStructure): leave vanilla structure AI alone —
@@ -116,6 +153,49 @@ namespace FactionTactics.Orders
                     // Chase players only, not structures — PreferKeepRange + AllowVanillaChase for combat target.
                 }
 
+                // Roman (and ShieldWall/Line Front): do not chase on Hold/Advance/ProtectMissiles.
+                // HoldGround when within FrontHoldSlotDist of slot; else MoveTo slot with AllowVanillaChase=false.
+                var isFrontLine = member.AssignedRole == SquadRole.Front
+                                  || member.AssignedRole == SquadRole.Leader;
+                var lineHoldingOrder = order.OrderKind == DoctrineOrderKind.Hold
+                                       || order.OrderKind == DoctrineOrderKind.Advance
+                                       || order.OrderKind == DoctrineOrderKind.ProtectMissiles;
+                var shieldOrLine = order.Formation == FormationType.ShieldWall
+                                   || order.Formation == FormationType.Line;
+
+                if (!isWallBreaker && !isCavalry && isFrontLine && (roman || shieldOrLine))
+                {
+                    // Roman: HoldGround always on Hold/ProtectMissiles/Advance/FocusFire
+                    // (StopMoving, AllowVanillaChase=false) — not only when near slot.
+                    var romanWallOrder = order.OrderKind == DoctrineOrderKind.Hold
+                                         || order.OrderKind == DoctrineOrderKind.Advance
+                                         || order.OrderKind == DoctrineOrderKind.ProtectMissiles
+                                         || order.OrderKind == DoctrineOrderKind.FocusFire;
+                    if (roman && romanWallOrder)
+                    {
+                        holdGround = true;
+                        allowChase = false;
+                    }
+                    else if (lineHoldingOrder)
+                    {
+                        var distToSlot = HorizontalDistance(member.Position, slot);
+                        holdGround = distToSlot <= FrontHoldSlotDist;
+                        allowChase = false; // only Charge allows chase for Front on line doctrines
+                    }
+                }
+
+                // Advance / Hold / formation: AllowVanillaChase false so Harmony CallMoveTo owns slot.
+                // Charge / FocusFire: approach threat — except Roman Front HoldGround (stay on wall slot).
+                var desired = slot;
+                if (!holdGround
+                    && (order.OrderKind == DoctrineOrderKind.Charge
+                        || order.OrderKind == DoctrineOrderKind.FocusFire))
+                {
+                    var threat = TryGetThreatPosition(member, centroid);
+                    if (threat.HasValue)
+                        desired = threat.Value;
+                }
+
                 var intent = new MemberIntent
                 {
                     SquadId = squad.SquadId,
@@ -123,7 +203,7 @@ namespace FactionTactics.Orders
                     Formation = order.Formation,
                     Stance = order.Stance,
                     Role = member.AssignedRole,
-                    DesiredPosition = slot,
+                    DesiredPosition = desired,
                     FocusTargetId = order.FocusTargetId,
                     HoldGround = holdGround,
                     PreferRun = order.OrderKind == DoctrineOrderKind.Charge
@@ -160,6 +240,52 @@ namespace FactionTactics.Orders
             return n > 0 ? new Vector3(sum.x / n, sum.y / n, sum.z / n) : Vector3.zero;
         }
 
+        /// <summary>
+        /// Build right/forward XZ basis from centroid → threat. Falls back to world +Z forward.
+        /// ShieldWall lateral along right; depth along forward (missiles negative = behind).
+        /// </summary>
+        public static void BuildFacingBasis(Vector3 centroid, Vector3? threat, out Vector3 right, out Vector3 forward)
+        {
+            Vector3 dir;
+            if (threat.HasValue)
+            {
+                dir = threat.Value - centroid;
+                dir.y = 0f;
+            }
+            else
+            {
+                dir = new Vector3(0f, 0f, 1f);
+            }
+
+            var mag2 = dir.x * dir.x + dir.z * dir.z;
+            if (mag2 < 0.0001f)
+                dir = new Vector3(0f, 0f, 1f);
+            else
+            {
+                var inv = 1f / (float)System.Math.Sqrt(mag2);
+                dir = new Vector3(dir.x * inv, 0f, dir.z * inv);
+            }
+
+            forward = dir;
+            // right = Cross(up, forward) so +right is to the formation's right facing threat
+            right = new Vector3(forward.z, 0f, -forward.x);
+            var r2 = right.x * right.x + right.z * right.z;
+            if (r2 < 0.0001f)
+                right = new Vector3(1f, 0f, 0f);
+            else
+            {
+                var inv = 1f / (float)System.Math.Sqrt(r2);
+                right = new Vector3(right.x * inv, 0f, right.z * inv);
+            }
+        }
+
+        private static float HorizontalDistance(Vector3 a, Vector3 b)
+        {
+            var dx = a.x - b.x;
+            var dz = a.z - b.z;
+            return (float)System.Math.Sqrt(dx * dx + dz * dz);
+        }
+
         private static Vector3 FormationSlot(
             FormationType formation,
             SquadRole role,
@@ -168,7 +294,9 @@ namespace FactionTactics.Orders
             Vector3 centroid,
             Vector3 current,
             bool cavalryFlanker,
-            bool artilleryRear)
+            bool artilleryRear,
+            Vector3 right,
+            Vector3 forward)
         {
             float spacing = 2.2f;
             float lateral = (index - (count - 1) / 2f) * spacing;
@@ -189,23 +317,24 @@ namespace FactionTactics.Orders
                 case FormationType.ShieldWall:
                 case FormationType.Line:
                     {
+                        // depth along forward: Front=0, Leader slightly back, Missile behind, Flanker offset
                         float depth = role == SquadRole.Missile || artilleryRear ? -5.5f
                             : role == SquadRole.Leader ? -1.5f
                             : role == SquadRole.Flanker ? (lateral < 0 ? -1f : 1f) * 2.5f
                             : 0f;
                         if (role == SquadRole.Flanker)
                             lateral *= 1.6f;
-                        return centroid + new Vector3(lateral, 0f, depth);
+                        return centroid + right * lateral + forward * depth;
                     }
                 case FormationType.Wedge:
                     {
                         float depth = -System.Math.Abs(lateral) * 0.6f;
-                        return centroid + new Vector3(lateral * 0.8f, 0f, depth);
+                        return centroid + right * (lateral * 0.8f) + forward * depth;
                     }
                 case FormationType.Skirmish:
                     {
                         float depth = artilleryRear ? -6f : (index % 2 == 0 ? 2f : -2f);
-                        return centroid + new Vector3(lateral * 1.4f, 0f, depth);
+                        return centroid + right * (lateral * 1.4f) + forward * depth;
                     }
                 case FormationType.Orb:
                     {
@@ -218,9 +347,76 @@ namespace FactionTactics.Orders
                     }
                 default:
                     return artilleryRear
-                        ? centroid + new Vector3(lateral, 0f, -5f)
+                        ? centroid + right * lateral + forward * -5f
                         : current;
             }
+        }
+
+        /// <summary>
+        /// Squad-level threat for formation facing: any member's combat target, else nearest player.
+        /// </summary>
+        private static Vector3? TryGetSquadThreatPosition(SquadUnit squad, Vector3 centroid)
+        {
+            foreach (var member in squad.Members)
+            {
+                if (!member.IsAlive)
+                    continue;
+                var t = TryGetThreatPosition(member, centroid);
+                if (t.HasValue)
+                    return t;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Charge / FocusFire approach point: combat target if known, else nearest player, else null (keep slot).
+        /// </summary>
+        private static Vector3? TryGetThreatPosition(SquadMemberView member, Vector3 centroid)
+        {
+#if VALHEIM_REFS
+            try
+            {
+                if (member.NativeHandle is MonsterAI ai)
+                {
+                    var target = ai.GetTargetCreature();
+                    if (target != null)
+                        return target.transform.position;
+                }
+            }
+            catch
+            {
+                // fall through to players
+            }
+
+            try
+            {
+                Vector3? best = null;
+                float bestDist = float.MaxValue;
+                var origin = member.Position;
+                if (origin == Vector3.zero)
+                    origin = centroid;
+                // Dedicated: Character.IsPlayer / ZNet positions (not GetAllPlayers alone).
+                foreach (var pos in FactionTactics.Util.ValheimWorldScan.CollectPlayerPositions())
+                {
+                    var d = Vector3.Distance(origin, pos);
+                    if (d < bestDist)
+                    {
+                        bestDist = d;
+                        best = pos;
+                    }
+                }
+
+                return best;
+            }
+            catch
+            {
+                return null;
+            }
+#else
+            _ = member;
+            _ = centroid;
+            return null;
+#endif
         }
 
         private static bool Contains(string? name, string token)

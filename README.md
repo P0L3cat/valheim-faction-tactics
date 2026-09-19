@@ -50,14 +50,16 @@ dotnet build plugin\FactionTactics.csproj -c Release ^
   -p:ValheimDir="C:\Program Files (x86)\Steam\steamapps\common\Valheim"
 ```
 
-When `$(ValheimDir)\valheim_Data\Managed\assembly_valheim.dll` exists, the project defines `VALHEIM_REFS` and links:
+When `$(ValheimDir)/valheim_Data/Managed/assembly_valheim.dll` exists, the project defines `VALHEIM_REFS` and links:
 
 | Assembly | HintPath |
 |----------|----------|
-| `assembly_valheim` | `$(ValheimDir)\valheim_Data\Managed\` |
+| `assembly_valheim` | `$(ValheimDir)/valheim_Data/Managed/` |
 | `assembly_utils` | same |
 | `UnityEngine`, `UnityEngine.CoreModule` | same |
-| `BepInEx`, `0Harmony` | `$(ValheimDir)\BepInEx\core\` |
+| `BepInEx`, `0Harmony` | `$(ValheimDir)/BepInEx/core/` |
+
+On Linux, paths use forward slashes (see `refs/README.md` for a local symlink `ValheimInstall` tree).
 
 Override `BepInExDir` if your pack layout differs.
 
@@ -152,6 +154,12 @@ Pin the BepInExPack dependency version to whatever your host uses.
 | `Siege.EnableSiegeAmbush` | true | Greydwarf Ambush may assault |
 | `Siege.EnableSiegeViking` | true | Draugr VikingShieldWall may assault |
 | `Debug.DebugLogging` | false | Verbose orders |
+| `AmbushAmbienceTemp.EnableAmbushAmbienceTemp` | true | TEMP BF ambush fog + neck-hair message; **set false for silent ambush** |
+| `AmbushAmbienceTemp.AmbushAmbienceFogEnvironment` | Misty | EnvMan force env (empty = skip fog) |
+| `AmbushAmbienceTemp.AmbushAmbienceMessage` | the hair on your neck stands up | Center message (per threatened player) |
+| `AmbushAmbienceTemp.AmbushAmbienceMessageCooldownSeconds` | 90 | Per-player message cooldown |
+| `AmbushAmbienceTemp.AmbushAmbiencePlayerRange` | 40 | Trigger range (m) |
+| `AmbushAmbienceTemp.AmbushAmbienceMinSquadSize` | 3 | Min alive Ambush squad size |
 
 ## Black Forest (Ambush + Troll fortress)
 
@@ -164,6 +172,7 @@ Pin the BepInExPack dependency version to whatever your host uses.
 - Troll near greydwarf squad(s) within `TrollSynergyRange` → greys **Flank/Kite** as skirmishers, peel backside, clear troll path.
 - Lone troll → vanilla MonsterAI (no Ambush pack ownership of `Troll*`).
 
+**TEMP ambush ambience** (`AmbushAmbienceTemp`): fog + neck-hair center message while a greydwarf Ambush squad is near a player. This is a troubleshooting wire — disable with `EnableAmbushAmbienceTemp=false` for proper silent ambush.
 
 ## Siege Assault v1
 
@@ -189,7 +198,7 @@ Meadows: no siege. Higher biomes: siege faction flags not enabled yet.
 6. **Black Forest:** spawn Greydwarfs + optional Troll — expect `[Ambush] … → Hold/Flank/Charge/Kite`; with troll nearby, synergy prefers Flank/Kite over frontal Hold/Charge.
 7. **Other packs:** Draugr shield wall, Fuling kite/encircle, Mistlands insect siege (soften near Dvergr), Charred ranks + Asksvin flank, Wolf/Drake pack hunt, Blob keep-range FocusFire.
 8. **Siege Assault:** place a workbench near Greydwarfs or Draugr (≥ `SiegeMinSquadSize`) — expect `[Ambush] Assault/quiet|hot …` or Viking; with player present, missiles FocusFire/ProtectMissiles while fronts Charge/Advance.
-9. Harmony method names are **hypotheses** — if patches fail to apply, check BepInEx log and verify `MonsterAI.UpdateAI` / `BaseAI.MoveTo` / `StopMoving` with ILSpy against your build (see VALHEIM_REFS TODOs in `HarmonyPatches/MonsterAIPatches.cs`). **v0.1:** patches may register but MoveTo/StopMoving remain commented no-ops — gameplay stays vanilla aside from intent bookkeeping.
+9. **VALHEIM_REFS wired:** Mono.Cecil-verified signatures — `MonsterAI.UpdateAI` Postfix calls public `StopMoving` and protected `MoveTo` via Traverse; stable ids via `ValheimIds.ToLong(GetZDOID())` (`(UserID&0xFFFFFFFF)<<32 | ID`). Still **needs in-game smoke test** (HoldGround stop, PreferKeepRange kite slot, vanilla chase when `AllowVanillaChase`). If patches fail to apply, check BepInEx log against your build.
 
 ## Layers (quick)
 
@@ -220,7 +229,9 @@ faction-tactics/
                        # CharredLegion, PackHunters, ArtilleryJelly, TrollFortressHelper
     Squad/
     Siege/             # SiegeDirector, AssaultStance (Assault v1)
+    Ambience/          # TEMP AmbushAmbienceDirector (fog + message)
     Orders/
+    Util/
     HarmonyPatches/
     Stubs/
 ```

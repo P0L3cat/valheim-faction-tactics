@@ -24,6 +24,9 @@ namespace FactionTactics.Squad
 
         public float AgeSeconds { get; set; }
 
+        /// <summary>Seconds spent on <see cref="PreviousOrderKind"/> (resets on order change).</summary>
+        public float OrderAgeSeconds { get; set; }
+
         public int TicksUnseen { get; set; }
 
         /// <summary>True once PeakAlive reached MinSquadSize (for IsBroken below-min proxy).</summary>

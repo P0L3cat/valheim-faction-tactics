@@ -1,0 +1,13 @@
+bin/
+obj/
+*.user
+*.suo
+.vs/
+*.dll
+*.pdb
+*.nupkg
+TestResults/
+
+# Valheim / BepInEx reference assemblies (multi-MB) — keep docs only
+refs/**
+!refs/README.md

@@ -8,8 +8,9 @@ namespace FactionTactics.Doctrine
 {
     /// <summary>
     /// Greydwarf* → Black Forest Ambush predators.
-    /// Refuse fair fights: lurk → multi-angle flash → disperse → re-ambush.
-    /// High anxiety, low slugfest. TrollFortress synergy consulted when enabled.
+    /// Guerrilla encircle: Orb/Skirmish orbit + Kite/Flank harassment.
+    /// Refuse mass Charge (blob bum-rush); flash only on isolate/stagger or
+    /// a rare aged-Flank envelope. After Charge → Kite, then re-encircle.
     /// </summary>
     public sealed class AmbushDoctrine : DoctrinePackBase
     {
@@ -26,6 +27,27 @@ namespace FactionTactics.Doctrine
         };
 
         public override bool IsEnabled => PluginConfig.EnableAmbush?.Value ?? true;
+
+        /// <summary>Outside this → Hold/Kite lurk (meters).</summary>
+        public const float OuterPocket = 18f;
+
+        /// <summary>Inner harassment band lower edge (meters).</summary>
+        public const float InnerBand = 8f;
+
+        /// <summary>After Kite, re-encircle (Flank) once gap exceeds this.</summary>
+        public const float ReEncircleGap = 14f;
+
+        /// <summary>Rare envelope flash: nearest must be inside this.</summary>
+        public const float EnvelopeFlashRange = 5f;
+
+        /// <summary>Minimum seconds on Flank before any non-isolate flash.</summary>
+        public const float MinFlankAgeForFlash = 3f;
+
+        /// <summary>Anxiety break → Kite / Hold.</summary>
+        public const float AnxietyCasualties = 0.22f;
+
+        /// <summary>Envelope flash requires casualty ratio below this.</summary>
+        public const float EnvelopeMaxCasualties = 0.12f;
 
         public override bool MatchesPrefab(string prefabName)
         {
@@ -72,13 +94,6 @@ namespace FactionTactics.Doctrine
 
         public override DoctrineOrderKind SelectOrder(SquadSnapshot snapshot, DoctrineOrderKind? previous)
         {
-            // Ambush / Black Forest ranges: tight pocket, early break-off.
-            // Local pocket constants; snapshot AdvanceRange/ChargeRange also set for Ambush.
-            const float pocketEntry = 16f;   // players enter ambush pocket
-            const float flashRange = 9f;    // multi-angle flash charge
-            const float reAmbushGap = 22f;  // after disperse, hold until gap reopens
-            const float anxietyCasualties = 0.22f;
-
             // --- Troll mobile fortress (addon) ---
             var synergy = TrollFortressHelper.SuggestSynergyOrder(snapshot, previous);
             if (synergy.HasValue)
@@ -88,96 +103,102 @@ namespace FactionTactics.Doctrine
             if (snapshot.ThreatCount <= 0)
                 return DoctrineOrderKind.Hold;
 
-            // 2) Broken / anxiety break → Disperse (RetreatAndReform), then re-ambush via Hold
-            if (snapshot.IsBroken || snapshot.CasualtyRatio >= anxietyCasualties)
-                return DoctrineOrderKind.RetreatAndReform;
-
-            // After a flash charge, refuse slugfest: disperse even if casualties low.
-            if (previous == DoctrineOrderKind.Charge)
-                return DoctrineOrderKind.RetreatAndReform;
-
-            // Re-ambush: after disperse, Hold (hide) until pocket is quiet / threat far.
-            if (previous == DoctrineOrderKind.RetreatAndReform)
+            // 2) Broken / high casualties → Kite, then Hold once gap reopens
+            if (snapshot.IsBroken || snapshot.CasualtyRatio >= AnxietyCasualties)
             {
-                if (snapshot.NearestThreatDistance > reAmbushGap)
+                if (previous == DoctrineOrderKind.Kite
+                    && snapshot.NearestThreatDistance > ReEncircleGap)
                     return DoctrineOrderKind.Hold;
-                // Still hot: kite away rather than re-commit.
                 return DoctrineOrderKind.Kite;
             }
 
-            // 3) Threat outside pocket → Hold (refuse fair approach / stay hidden)
-            if (snapshot.NearestThreatDistance > pocketEntry)
-                return DoctrineOrderKind.Hold;
+            // 3) After any Charge → Kite (harassment loop; prefer over RetreatAndReform)
+            if (previous == DoctrineOrderKind.Charge)
+                return DoctrineOrderKind.Kite;
+
+            // 4) After Kite until gap > 14f → Flank (re-encircle); else keep Kite
+            if (previous == DoctrineOrderKind.Kite)
+            {
+                if (snapshot.NearestThreatDistance > ReEncircleGap)
+                    return DoctrineOrderKind.Flank;
+                return DoctrineOrderKind.Kite;
+            }
 
             var hasShaman = snapshot.CountByRole(SquadRole.Missile) > 0;
-            var hasSwarm = snapshot.CountByRole(SquadRole.Flanker) > 0;
-            var hasBrute = snapshot.CountByRole(SquadRole.Front) > 0
-                           || snapshot.CountByRole(SquadRole.Leader) > 0;
 
-            // 4) Players just entered pocket → shaman opener, then multi-angle Flank
-            if (snapshot.NearestThreatDistance > flashRange)
+            // 5) Outside 18f → Hold/Kite
+            if (snapshot.NearestThreatDistance > OuterPocket)
             {
-                if (hasShaman && previous != DoctrineOrderKind.FocusFire
-                    && previous != DoctrineOrderKind.Flank)
+                if (previous == DoctrineOrderKind.Flank
+                    || previous == DoctrineOrderKind.FocusFire
+                    || previous == DoctrineOrderKind.ProtectMissiles)
+                    return DoctrineOrderKind.Kite;
+                return DoctrineOrderKind.Hold;
+            }
+
+            // 6) 8–18f → Flank (Orb) / shaman FocusFire from rear
+            if (snapshot.NearestThreatDistance > InnerBand)
+            {
+                if (hasShaman
+                    && previous != DoctrineOrderKind.Flank
+                    && previous != DoctrineOrderKind.FocusFire
+                    && previous != DoctrineOrderKind.ProtectMissiles)
                 {
-                    // Poison / opener pressure; hang back (ProtectMissiles if already focusing).
-                    if (previous == DoctrineOrderKind.FocusFire || snapshot.MissileThreatened)
+                    if (snapshot.MissileThreatened)
                         return DoctrineOrderKind.ProtectMissiles;
                     return DoctrineOrderKind.FocusFire;
                 }
 
+                if (hasShaman && (previous == DoctrineOrderKind.FocusFire || snapshot.MissileThreatened))
+                    return DoctrineOrderKind.ProtectMissiles;
+
                 return DoctrineOrderKind.Flank;
             }
 
-            // 5) Flash charge window — swarm Flank→Charge; brute only if target isolated/low
-            // Hysteresis: once peeling (Kite) while not isolated, hold Kite until gap or isolate
-            // to avoid Flank↔Kite oscillation every tick.
-            if (previous == DoctrineOrderKind.Kite
-                && snapshot.NearestThreatDistance <= flashRange
-                && !snapshot.TargetIsolated)
-                return DoctrineOrderKind.Kite;
-
-            if (hasSwarm && previous != DoctrineOrderKind.Flank && previous != DoctrineOrderKind.Charge
-                && previous != DoctrineOrderKind.Kite)
-                return DoctrineOrderKind.Flank;
-
-            if (ShouldCommitFlash(snapshot, hasBrute, hasSwarm, previous))
+            // 7) <8f → Flank/Kite unless ShouldCommitFlash (strict isolate / rare envelope)
+            if (ShouldCommitFlash(snapshot, previous))
                 return DoctrineOrderKind.Charge;
 
-            // Anxiety: if we would otherwise slugfest, peel.
-            if (previous == DoctrineOrderKind.Flank && !snapshot.TargetIsolated)
+            // Prefer orbit Flank; peel to Kite if already close without a flash window
+            // and not isolated (avoid slugfest).
+            if (!snapshot.TargetIsolated && !snapshot.ThreatStaggeredOrLow
+                && previous == DoctrineOrderKind.Flank
+                && snapshot.NearestThreatDistance < EnvelopeFlashRange)
                 return DoctrineOrderKind.Kite;
 
             return DoctrineOrderKind.Flank;
         }
 
         /// <summary>
-        /// Flash commit: swarm may charge after Flank; brute (Front/Leader) only when
-        /// target is isolated / staggered proxy / already low (TargetIsolated / FlankOpportunity).
+        /// Strict flash commit — refuses mass swarm Charge after Flank.
+        /// Charge only if TargetIsolated OR ThreatStaggeredOrLow OR
+        /// (Flank aged &gt; 3s AND nearest &lt; 5f AND casualtyRatio low).
+        /// Brutes share the same gate (orbit Flank otherwise).
         /// </summary>
-        private static bool ShouldCommitFlash(
-            SquadSnapshot snapshot,
-            bool hasBrute,
-            bool hasSwarm,
-            DoctrineOrderKind? previous)
+        private static bool ShouldCommitFlash(SquadSnapshot snapshot, DoctrineOrderKind? previous)
         {
             if (snapshot.NearestThreatDistance > snapshot.ChargeRange
-                && snapshot.NearestThreatDistance > 9f)
+                && snapshot.NearestThreatDistance > InnerBand)
                 return false;
 
-            // Pure swarm flash after envelope.
-            if (hasSwarm && previous == DoctrineOrderKind.Flank)
-                return true;
-
-            // Brute: only commit if target isolated / staggered / low (snapshot flags).
-            if (hasBrute)
+            // Isolate / stagger / low-HP: allow flash from Flank or FocusFire.
+            if (snapshot.TargetIsolated || snapshot.ThreatStaggeredOrLow)
             {
-                if (snapshot.TargetIsolated || snapshot.ThreatStaggeredOrLow)
-                    return previous == DoctrineOrderKind.Flank || previous == DoctrineOrderKind.FocusFire;
-                return false;
+                return previous == DoctrineOrderKind.Flank
+                       || previous == DoctrineOrderKind.FocusFire;
             }
 
-            return previous == DoctrineOrderKind.Flank;
+            // Rare envelope: aged Flank + very close + healthy pack.
+            // Must NOT fire merely because previous was Flank (that was the bum-rush).
+            if (previous == DoctrineOrderKind.Flank
+                && snapshot.AgeSeconds >= MinFlankAgeForFlash
+                && snapshot.NearestThreatDistance < EnvelopeFlashRange
+                && snapshot.CasualtyRatio <= EnvelopeMaxCasualties)
+            {
+                return true;
+            }
+
+            return false;
         }
 
         public static bool IsShaman(SquadMemberView member)
@@ -187,7 +208,5 @@ namespace FactionTactics.Doctrine
             => Contains(member.PrefabName, "Elite")
                || Contains(member.PrefabName, "Brute")
                || member.LooksLikeHeavy;
-
-
     }
 }
