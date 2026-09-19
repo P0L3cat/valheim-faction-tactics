@@ -68,4 +68,4 @@ Dedicated smoke with peers + skeletons/greys: orders show doctrine-correct kinds
 
 ## Version
 
-Plugin **0.2.0**. Do not deploy while Ungrull is online (no bounce).
+Plugin **0.2.1** (0.2.0 Prefix sole-brain + discovery/CountAlive smoke fixes). FTP stage only — parent deploys; no bounce here.

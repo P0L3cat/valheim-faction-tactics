@@ -137,7 +137,32 @@ namespace FactionTactics.Squad
             var playerPositions = CollectPlayerPositions();
             LastPlayerCount = playerPositions.Count;
 
+            // EnumerateMonsterAIs already unions ownership, but GPortal smoke showed
+            // intermittent empty enum while enemyMai=8 — belt-and-suspenders union here.
             var ais = ValheimWorldScan.EnumerateMonsterAIs();
+            var seenAi = new HashSet<int>();
+            foreach (var ai in ais)
+            {
+                if (ai == null) continue;
+                try { seenAi.Add(ai.GetInstanceID()); } catch { /* ignore */ }
+            }
+            try
+            {
+                var owned = FactionTactics.Dedicated.EnemyOwnershipDirector.SnapshotLiveMonsterAIs();
+                foreach (var ai in owned)
+                {
+                    if (ai == null) continue;
+                    int id;
+                    try { id = ai.GetInstanceID(); } catch { continue; }
+                    if (!seenAi.Add(id)) continue;
+                    ais.Add(ai);
+                }
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log?.LogWarning(
+                    $"SquadDiscovery ownership union failed: {ex.GetType().Name}: {ex.Message}");
+            }
             LastMonsterAiCount = ais.Count;
             LastCharacterCount = ValheimWorldScan.LastScanCharacterCount;
             LastInRangeCount = ValheimWorldScan.LastScanInRangeCount;
@@ -215,7 +240,7 @@ namespace FactionTactics.Squad
                     if (PluginConfig.DebugLogging?.Value == true)
                     {
                         Plugin.Log?.LogDebug(
-                            $"SquadDiscovery 0.2.0: skip empty-enumerate warn " +
+                            $"SquadDiscovery 0.2.1: skip empty-enumerate warn " +
                             $"(updateAIHits={LastUpdateAIHits} thisScan=0 liveReg={liveReg} liveOwn={liveOwn} " +
                             $"liveScan={liveScan} peak={LastPeakMonsterAiCount}).");
                     }
@@ -224,7 +249,7 @@ namespace FactionTactics.Squad
                 {
                     _loggedEmptyEnumerateWarning = true;
                     Plugin.Log?.LogWarning(
-                        $"SquadDiscovery 0.2.0: updateAIHits={LastUpdateAIHits} but EnumerateMonsterAIs=0 " +
+                        $"SquadDiscovery 0.2.1: updateAIHits={LastUpdateAIHits} but EnumerateMonsterAIs=0 " +
                         $"(registry={LastRegistry} scene={LastSceneInstances} prefabMai={LastPrefabMai}). " +
                         "Ownership live cache / BaseAI.Instances harvest should feed discovery.");
                 }
@@ -232,7 +257,7 @@ namespace FactionTactics.Squad
             else if (LastMonsterAiCount > 0 && LastCandidateCount == 0)
             {
                 Plugin.Log?.LogWarning(
-                    $"SquadDiscovery 0.2.0: monsterAI={LastMonsterAiCount} but candidates=0 " +
+                    $"SquadDiscovery 0.2.1: monsterAI={LastMonsterAiCount} but candidates=0 " +
                     $"(dead={skippedDead} radius={skippedRadius} prefabMiss={skippedPrefab} " +
                     $"players={LastPlayerCount} radiusM={discoveryRadius} samplePrefabs=[{string.Join(",", prefabSamples)}]).");
             }
@@ -241,7 +266,7 @@ namespace FactionTactics.Squad
                 _loggedEmptyEnumerateWarning = false; // allow re-warn if discovery later goes empty again
                 var doctrineSummary = SummarizeDoctrines(list);
                 Plugin.Log?.LogInfo(
-                    $"SquadDiscovery 0.2.0: candidates={LastCandidateCount} monsterAI={LastMonsterAiCount} " +
+                    $"SquadDiscovery 0.2.1: candidates={LastCandidateCount} monsterAI={LastMonsterAiCount} " +
                     $"registry={LastRegistry} players={LastPlayerCount} doctrines=[{doctrineSummary}].");
             }
 #else

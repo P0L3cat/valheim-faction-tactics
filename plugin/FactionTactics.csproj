@@ -71,4 +71,10 @@
            Text="VALHEIM_REFS missing: set -p:ValheimDir=... (expected $(ValheimManaged)/assembly_valheim.dll). Refusing stubs-only build." />
   </Target>
 
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>FactionTactics.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
 </Project>

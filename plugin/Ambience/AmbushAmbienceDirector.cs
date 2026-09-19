@@ -128,7 +128,7 @@ namespace FactionTactics.Ambience
             {
                 if (m == null || !m.IsAlive)
                     continue;
-                if (m.HealthRatio >= 0f && m.HealthRatio <= 0.02f)
+                if (m.HealthRatio > 0f && m.HealthRatio <= 0.02f)
                     continue;
                 alive++;
                 sum += m.Position;

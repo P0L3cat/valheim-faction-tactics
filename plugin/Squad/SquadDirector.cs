@@ -39,6 +39,8 @@ namespace FactionTactics.Squad
         private int _nextStableSerial;
         private float _heartbeatAge;
         private const float HeartbeatIntervalSeconds = 15f;
+        /// <summary>Squads returned from Discover() last Tick (before minSize gate).</summary>
+        private int _lastDiscoveredCount;
 
         public SquadDirector(
             ISquadDiscovery discovery,
@@ -69,6 +71,7 @@ namespace FactionTactics.Squad
         {
             _active.Clear();
             var discovered = _discovery.Discover();
+            _lastDiscoveredCount = discovered.Count;
             var minSize = PluginConfig.MinSquadSize?.Value ?? 3;
             var seen = new HashSet<SquadRuntimeState>();
 
@@ -82,6 +85,7 @@ namespace FactionTactics.Squad
 
                 var alive = CountAlive(squad);
                 var roster = squad.Members.Count;
+                var doctrineId = squad.Doctrine?.Id ?? "?";
                 state.PeakAlive = Math.Max(state.PeakAlive, Math.Max(alive, roster));
                 if (state.PeakAlive >= minSize)
                     state.EverMetMinSize = true;
@@ -99,8 +103,9 @@ namespace FactionTactics.Squad
                     var (ratio, broken) = ComputeCasualties(alive, state, minSize);
                     squad.LastCasualtyRatio = ratio;
                     squad.LastIsBroken = broken;
-                    if (PluginConfig.DebugLogging?.Value == true)
-                        Plugin.Log?.LogDebug($"Squad {squad.SquadId} below min size ({alive}/{minSize}, roster={roster}) — vanilla AI.");
+                    // 0.2.1: always LogInfo so GPortal smoke shows why _active stayed empty.
+                    Plugin.Log?.LogInfo(
+                        $"Squad {squad.SquadId} below minSize alive={alive} roster={roster} min={minSize} doctrine={doctrineId}");
                     continue;
                 }
 
@@ -113,7 +118,11 @@ namespace FactionTactics.Squad
 
                 var order = _commander.Propose(snapshot);
                 if (order == null)
+                {
+                    Plugin.Log?.LogInfo(
+                        $"Squad {squad.SquadId} Propose returned null doctrine={doctrineId}");
                     continue;
+                }
 
                 order = MaybeRescoreOrder(order, snapshot);
                 squad.CurrentOrder = order;
@@ -124,8 +133,17 @@ namespace FactionTactics.Squad
                 }
                 squad.PreviousOrderKind = order.OrderKind;
                 state.PreviousOrderKind = order.OrderKind;
-                _applicator.Apply(squad, order);
-                _active.Add(squad);
+                try
+                {
+                    _applicator.Apply(squad, order);
+                    _active.Add(squad);
+                }
+                catch (Exception ex)
+                {
+                    Plugin.Log?.LogInfo(
+                        $"Squad {squad.SquadId} Apply failed doctrine={doctrineId}: {ex.GetType().Name}: {ex.Message}");
+                    continue;
+                }
 
                 if (PluginConfig.DebugLogging?.Value == true)
                 {
@@ -232,7 +250,8 @@ namespace FactionTactics.Squad
             enemyMai = FactionTactics.Dedicated.EnemyOwnershipDirector.LastEnemyMai;
 #endif
             Plugin.Log?.LogInfo(
-                $"FactionTactics heartbeat: squads={_active.Count} orders=[{topOrders}] " +
+                $"FactionTactics heartbeat: discovered={_lastDiscoveredCount} active={_active.Count} " +
+                $"squads={_active.Count} orders=[{topOrders}] " +
                 $"formations=[{topForms}] baseAIUpdateHits={baseAIUpdateHits} updateAIHits={updateAIHits} " +
                 $"registry={registry} findAll={findAll} findObjects={findObjects} " +
                 $"sceneInstances={sceneInstances} prefabZdos={prefabZdos} prefabLive={prefabLive} prefabMai={prefabMai} " +
@@ -506,15 +525,36 @@ namespace FactionTactics.Squad
             return (ratio, isBroken);
         }
 
-        private static int CountAlive(SquadUnit squad)
+        /// <summary>
+        /// Alive roster for minSize / casualty math.
+        /// 0.2.1: do not treat default/unknown HealthRatio (≤0, typically -1) as dead —
+        /// HP dead-proxy only when HealthRatio is in (0, 0.02]. Under VALHEIM_REFS,
+        /// refresh IsAlive from Character via NativeHandle MonsterAI each call.
+        /// </summary>
+        internal static int CountAlive(SquadUnit squad)
         {
             int n = 0;
             foreach (var m in squad.Members)
             {
+#if VALHEIM_REFS
+                if (m.NativeHandle is MonsterAI mai)
+                {
+                    try
+                    {
+                        var ch = ValheimIds.GetCharacter(mai);
+                        if (ch != null)
+                            m.IsAlive = !ch.IsDead();
+                    }
+                    catch
+                    {
+                        // keep existing IsAlive flag
+                    }
+                }
+#endif
                 if (!m.IsAlive)
                     continue;
-                // Optional HP proxy: treat near-zero health as dead for casualty math.
-                if (m.HealthRatio >= 0f && m.HealthRatio <= 0.02f)
+                // HP dead-proxy only for known near-zero health — exclude 0 / negative (unknown).
+                if (m.HealthRatio > 0f && m.HealthRatio <= 0.02f)
                     continue;
                 n++;
             }

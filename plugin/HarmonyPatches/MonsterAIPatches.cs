@@ -14,7 +14,7 @@ namespace FactionTactics.HarmonyPatches
 {
     /// <summary>
     /// Harmony entry + MonsterAI / BaseAI steering + discovery patches.
-    /// 0.2.0: MonsterAI.UpdateAI Prefix skips vanilla when MemberIntent exists (FT sole brain).
+    /// 0.2.1: MonsterAI.UpdateAI Prefix skips vanilla when MemberIntent exists (FT sole brain).
     /// Ownership/discovery/registry unchanged. BaseAI.MoveTo Prefix retained as belt-and-suspenders.
     /// </summary>
     public static class MonsterAIPatches
@@ -24,7 +24,7 @@ namespace FactionTactics.HarmonyPatches
 #if VALHEIM_REFS
             harmony.PatchAll(typeof(MonsterAIPatches).Assembly);
             Plugin.Log.LogInfo(
-                "MonsterAI Harmony patches LIVE (VALHEIM_REFS 0.2.0): MonsterAI.UpdateAI Prefix skip-when-intent; " +
+                "MonsterAI Harmony patches LIVE (VALHEIM_REFS 0.2.1): MonsterAI.UpdateAI Prefix skip-when-intent; " +
                 "FT drives MoveTo/StopMoving/LookAt/DoAttack; BaseAI.MoveTo Prefix guard; " +
                 "registry OnEnable/Awake/AddInstance. Smoke: line/orbit without vanilla bum-rush, still attacks.");
 #else
@@ -36,7 +36,7 @@ namespace FactionTactics.HarmonyPatches
 
 #if VALHEIM_REFS
     /// <summary>
-    /// 0.2.0 Prefix: when <see cref="MemberIntent"/> exists, skip vanilla MonsterAI.UpdateAI
+    /// 0.2.1 Prefix: when <see cref="MemberIntent"/> exists, skip vanilla MonsterAI.UpdateAI
     /// entirely and drive MoveTo / StopMoving / LookAt / DoAttack from FT.
     /// No intent → return true (vanilla brain). Ownership/discovery stay outside this patch.
     /// </summary>
