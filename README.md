@@ -1,8 +1,8 @@
 # Faction Tactics
 
-**1.0.0 hybrid:** server commander (`FactionTactics.dll`) + client executor (`FactionTactics.Client.dll`).
+**1.0.1 hybrid:** server commander (`FactionTactics.dll`) + client executor (`FactionTactics.Client.dll`).
 
-## Quick install (1.0.0)
+## Quick install (1.0.1)
 
 1. **Server:** unzip `dist/FactionTactics-Server.zip` → `BepInEx/plugins/FactionTactics.dll`
 2. **Players:** unzip `dist/FactionTactics-Client.zip` → `BepInEx/plugins/FactionTactics.Client.dll`

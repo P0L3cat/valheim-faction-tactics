@@ -38,9 +38,9 @@ namespace FactionTactics.Tests
         }
 
         [Fact]
-        public void Product_and_schema_versions_are_1_0_0_v2()
+        public void Product_and_schema_versions_are_1_0_1_v2()
         {
-            Assert.Equal("1.0.0", FtVersion.ProductVersion);
+            Assert.Equal("1.0.1", FtVersion.ProductVersion);
             Assert.Equal(2, FtVersion.IntentSchemaVersion);
             Assert.Equal(IntentZdoCodec.SchemaVersion, FtVersion.IntentSchemaVersion);
         }

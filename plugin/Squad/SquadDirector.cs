@@ -184,6 +184,7 @@ namespace FactionTactics.Squad
             var baseAIUpdateHits = 0L;
             var monsterAi = 0;
             var candidates = 0;
+            var zdoCandidates = 0;
             if (_discovery is SquadDiscovery sd)
             {
                 registry = sd.LastRegistry;
@@ -197,6 +198,7 @@ namespace FactionTactics.Squad
                 baseAIUpdateHits = sd.LastBaseAIUpdateHits;
                 monsterAi = sd.LastMonsterAiCount;
                 candidates = sd.LastCandidateCount;
+                zdoCandidates = sd.LastZdoCandidateCount;
             }
 
 #if VALHEIM_REFS
@@ -259,29 +261,31 @@ namespace FactionTactics.Squad
             stickyKeeps = FactionTactics.HarmonyPatches.ZDOMan_ReleaseNearbyZDOS_StickyEnemy_Patch.LastStickyKeeps;
             stickyReclaims = FactionTactics.HarmonyPatches.ZDOMan_ReleaseNearbyZDOS_StickyEnemy_Patch.LastStickyReclaims;
 #endif
-                        var zdoWrites = 0L;
+            var zdoIntentsWritten = 0L;
+            var schemaWrites = 0L;
             var zdoReads = 0L;
             var zdoStale = 0L;
             var schemaMismatch = 0L;
             var ownerDrives = 0L;
 #if VALHEIM_REFS
-            zdoWrites = FactionTactics.Orders.IntentZdoSync.Writes;
+            zdoIntentsWritten = FactionTactics.Orders.IntentZdoSync.Writes;
+            schemaWrites = FactionTactics.Orders.IntentZdoSync.SchemaWrites;
             zdoReads = FactionTactics.Orders.IntentZdoSync.ReadsOk;
             zdoStale = FactionTactics.Orders.IntentZdoSync.ReadsStale;
             schemaMismatch = FactionTactics.Orders.IntentZdoSync.SchemaMismatches;
             ownerDrives = FactionTactics.HarmonyPatches.MonsterAI_UpdateAI_Patch.OwnerDriveCount;
 #endif
-Plugin.Log?.LogInfo(
+            Plugin.Log?.LogInfo(
                 $"FactionTactics heartbeat: discovered={_lastDiscoveredCount} active={_active.Count} " +
                 $"squads={_active.Count} orders=[{topOrders}] " +
                 $"formations=[{topForms}] baseAIUpdateHits={baseAIUpdateHits} updateAIHits={updateAIHits} " +
                 $"registry={registry} findAll={findAll} findObjects={findObjects} " +
                 $"sceneInstances={sceneInstances} prefabZdos={prefabZdos} prefabLive={prefabLive} prefabMai={prefabMai} " +
-                $"monsterAI={monsterAi} candidates={candidates} " +
+                $"monsterAI={monsterAi} candidates={candidates} zdoCandidates={zdoCandidates} " +
                 $"enemyOwned={enemyOwned} enemyLive={enemyLive} enemyMai={enemyMai} " +
                 $"enemyServerOwned={enemyServerOwned} enemyClientOwned={enemyClientOwned} " +
                 $"enemyReclaims={enemyReclaims} stickyKeeps={stickyKeeps} stickyReclaims={stickyReclaims}" +
-                $" zdoWrites={zdoWrites} zdoReads={zdoReads} zdoStale={zdoStale} schemaMismatch={schemaMismatch} ownerDrives={ownerDrives}");
+                $" zdoIntentsWritten={zdoIntentsWritten} schemaWrites={schemaWrites} zdoReads={zdoReads} zdoStale={zdoStale} schemaMismatch={schemaMismatch} ownerDrives={ownerDrives}");
         }
 
         private SquadRuntimeState MatchOrCreateRuntime(SquadUnit squad)

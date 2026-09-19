@@ -243,7 +243,7 @@ namespace FactionTactics.Orders
 
 
 #if VALHEIM_REFS
-        /// <summary>0.3.0: push intent to ZDO so owning clients can execute without server ownership.</summary>
+        /// <summary>1.0.x: push intent to ZDO so owning clients can execute without server ownership (MonsterAI or raw ZDO handle).</summary>
         private static void TryReplicateIntent(SquadMemberView member, MemberIntent intent)
         {
             try

@@ -76,6 +76,9 @@ namespace FactionTactics.Squad
         /// <summary>Last Discover() candidates that matched a doctrine pack.</summary>
         public int LastCandidateCount { get; private set; }
 
+        /// <summary>Last Discover() candidates sourced from ZDO-only path (no live MonsterAI).</summary>
+        public int LastZdoCandidateCount { get; private set; }
+
         public SquadDiscovery(DoctrinePackRegistry registry)
         {
             _registry = registry;
@@ -218,6 +221,67 @@ namespace FactionTactics.Squad
                     View = BuildView(ch, prefab, ai),
                 });
             }
+
+            // 1.0.1: ZDO-only commander path — dedicated with sticky/ownership OFF often has
+            // monsterAI=0 while enemy prefab ZDOs still exist near players. Group those into
+            // doctrine squads and let OrderApplicator Write intents via NativeHandle=ZDO.
+            var seenIds = new HashSet<long>();
+            foreach (var c in list)
+            {
+                if (c.View != null && c.View.InstanceId != 0)
+                    seenIds.Add(c.View.InstanceId);
+            }
+            var zdoAdded = 0;
+            try
+            {
+                var enemyZdos = ValheimWorldScan.EnumerateEnemyZdosNearPlayers(discoveryRadius);
+                LastPrefabZdos = Math.Max(LastPrefabZdos, ValheimWorldScan.LastScanEnemyZdoCount);
+                foreach (var zdo in enemyZdos)
+                {
+                    if (zdo == null)
+                        continue;
+                    long id;
+                    try { id = ValheimIds.ToLong(zdo.m_uid); }
+                    catch { continue; }
+                    if (id == 0 || !seenIds.Add(id))
+                        continue;
+
+                    if (!ValheimWorldScan.TryGetEnemyPrefabName(zdo, out var rawName))
+                        continue;
+                    var prefab = SanitizePrefabName(rawName);
+                    var pack = _registry.ResolveByPrefab(prefab);
+                    if (pack == null)
+                    {
+                        skippedPrefab++;
+                        if (prefabSamples.Count < 8 && !string.IsNullOrEmpty(prefab))
+                            prefabSamples.Add(prefab);
+                        continue;
+                    }
+
+                    Vector3 pos;
+                    try { pos = zdo.GetPosition(); }
+                    catch { continue; }
+
+                    if (playerPositions.Count > 0 && !WithinAny(pos, playerPositions, discoveryRadius))
+                    {
+                        skippedRadius++;
+                        continue;
+                    }
+
+                    list.Add(new Candidate
+                    {
+                        Doctrine = pack,
+                        View = BuildViewFromZdo(zdo, prefab, pos),
+                    });
+                    zdoAdded++;
+                }
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log?.LogWarning(
+                    $"SquadDiscovery ZDO path failed: {ex.GetType().Name}: {ex.Message}");
+            }
+            LastZdoCandidateCount = zdoAdded;
             LastCandidateCount = list.Count;
             if (LastMonsterAiCount > LastPeakMonsterAiCount)
                 LastPeakMonsterAiCount = LastMonsterAiCount;
@@ -225,7 +289,7 @@ namespace FactionTactics.Squad
             // Loud diagnostics: 0.1.9 smoke had updateAIHits climbing while monsterAI/candidates stayed 0.
             // 0.2.0: suppress false warning when a later/live path already has MAs
             // (stale LastScan after double Discover, or registry/ownership filled after an empty pass).
-            if (LastUpdateAIHits > 0 && LastMonsterAiCount == 0)
+            if (LastUpdateAIHits > 0 && LastMonsterAiCount == 0 && LastZdoCandidateCount == 0 && LastCandidateCount == 0)
             {
                 var liveReg = 0;
                 var liveOwn = 0;
@@ -266,8 +330,9 @@ namespace FactionTactics.Squad
                 _loggedEmptyEnumerateWarning = false; // allow re-warn if discovery later goes empty again
                 var doctrineSummary = SummarizeDoctrines(list);
                 Plugin.Log?.LogInfo(
-                    $"SquadDiscovery 0.2.2: candidates={LastCandidateCount} monsterAI={LastMonsterAiCount} " +
-                    $"registry={LastRegistry} players={LastPlayerCount} doctrines=[{doctrineSummary}].");
+                    $"SquadDiscovery 1.0.1: candidates={LastCandidateCount} zdoCandidates={LastZdoCandidateCount} " +
+                    $"monsterAI={LastMonsterAiCount} registry={LastRegistry} players={LastPlayerCount} " +
+                    $"doctrines=[{doctrineSummary}].");
             }
 #else
             // Without game DLLs discovery is empty; director/doctrine still unit-testable with injected views.
@@ -290,6 +355,7 @@ namespace FactionTactics.Squad
             LastUpdateAIHits = 0;
             LastBaseAIUpdateHits = 0;
             LastCandidateCount = 0;
+            LastZdoCandidateCount = 0;
 #endif
             return list;
         }
@@ -365,6 +431,24 @@ namespace FactionTactics.Squad
                 NativeHandle = ai,
             };
 
+            ApplyPrefabHeuristics(view);
+            return view;
+        }
+
+        /// <summary>
+        /// ZDO-only member view for hybrid commander (no live MonsterAI on dedicated).
+        /// OrderApplicator replicates via IntentZdoSync.Write(zdo, …).
+        /// </summary>
+        private static SquadMemberView BuildViewFromZdo(ZDO zdo, string prefab, Vector3 pos)
+        {
+            var view = new SquadMemberView
+            {
+                InstanceId = ValheimIds.ToLong(zdo.m_uid),
+                PrefabName = prefab,
+                Position = pos,
+                IsAlive = true,
+                NativeHandle = zdo,
+            };
             ApplyPrefabHeuristics(view);
             return view;
         }

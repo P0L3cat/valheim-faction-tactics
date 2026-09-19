@@ -1,8 +1,15 @@
-<!-- Faction Tactics 1.0.0: hybrid + Death-Rush shipped. Sticky/ownership default OFF. -->
+<!-- Faction Tactics 1.0.1: ZDO-only commander discovery (no live MonsterAI required). Sticky/ownership default OFF. -->
 # Server combat AI roadmap — 0.3.0 hybrid commander / executor
 
 **Date:** 2026-09-19 (America/Chicago)  
 **Status:** 0.3.0 implemented offline — **no GPortal deploy** from this change.
+
+## 1.0.1 fix (ZDO-only commander)
+
+Dedicated with sticky/ownership **OFF** often has `monsterAI=0` → no squads → no `ft_iv` writes → client `schema mismatch (zdo=0 local=2)` and vanilla feel.
+
+**Fix:** `ValheimWorldScan.EnumerateEnemyZdosNearPlayers` + `SquadDiscovery` ZDO-backed members (`NativeHandle=ZDO`). `OrderApplicator` already calls `IntentZdoSync.Write(zdo, …)`. Heartbeat: `zdoCandidates`, `zdoIntentsWritten`, `schemaWrites`. Client executor unchanged.
+
 
 ## Pivot (Nate)
 

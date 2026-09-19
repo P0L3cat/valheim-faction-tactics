@@ -23,6 +23,8 @@ namespace FactionTactics.Orders
         public const string KeySquadHash = "ft_sq";
 
         public static long Writes { get; private set; }
+        /// <summary>Successful schema-version stamps written (same as Writes for current schema).</summary>
+        public static long SchemaWrites { get; private set; }
         public static long ReadsOk { get; private set; }
         public static long ReadsMiss { get; private set; }
         public static long ReadsStale { get; private set; }
@@ -31,7 +33,7 @@ namespace FactionTactics.Orders
 
         public static void ResetCounters()
         {
-            Writes = ReadsOk = ReadsMiss = ReadsStale = SchemaMismatches = 0;
+            Writes = SchemaWrites = ReadsOk = ReadsMiss = ReadsStale = SchemaMismatches = 0;
             _loggedSchemaMismatch = false;
         }
 
@@ -103,6 +105,7 @@ namespace FactionTactics.Orders
                 zdo.Set(KeyTime, nowSeconds);
                 zdo.Set(KeySquadHash, StableHash(intent.SquadId));
                 Writes++;
+                SchemaWrites++;
                 return true;
             }
             catch (Exception ex)
@@ -136,12 +139,12 @@ namespace FactionTactics.Orders
                         _loggedSchemaMismatch = true;
                         FactionTacticsLog.Debug(
                             $"[FT] INTENT SCHEMA MISMATCH: ZDO ft_iv={ver} local={IntentZdoCodec.SchemaVersion} product={FtVersion.ProductVersion}. " +
-                            "Update FactionTactics server+client packs to the same 0.3.x release.");
+                            "Update FactionTactics server+client packs to the same 1.0.x release.");
                         try
                         {
                             UnityEngine.Debug.LogError(
                                 $"[FactionTactics] Intent schema mismatch (zdo={ver} local={IntentZdoCodec.SchemaVersion}). " +
-                                "Client/server packs must match — reinstall both from the same 0.3.0 zip.");
+                                "Client/server packs must match — reinstall both from the same 1.0.x release.");
                         }
                         catch { /* dedicated headless ok */ }
                     }

@@ -1,4 +1,4 @@
-# Packaging 1.0.0
+# Packaging 1.0.1
 
 ## Artifacts
 
@@ -19,4 +19,4 @@ dotnet build plugin/FactionTactics.csproj -c Release
 dotnet build client/FactionTactics.Client.csproj -c Release
 ```
 
-Requires `refs/ValheimInstall` (VALHEIM_REFS). Version: `FtVersion.ProductVersion` = `1.0.0` in both assemblies. Intent schema **v2** (DeathRush flag).
+Requires `refs/ValheimInstall` (VALHEIM_REFS). Version: `FtVersion.ProductVersion` = `1.0.1` in both assemblies. Intent schema **v2** (DeathRush flag).

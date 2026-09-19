@@ -103,6 +103,9 @@ namespace FactionTactics.Util
         /// <summary>Last scan MonsterAI count returned (deduped).</summary>
         public static int LastScanMonsterAiCount { get; private set; }
 
+        /// <summary>Last EnumerateEnemyZdosNearPlayers count (ZDO-only commander path).</summary>
+        public static int LastScanEnemyZdoCount { get; private set; }
+
         /// <summary>
         /// MonsterAI discovery for dedicated + local. Deduped by GetInstanceID.
         /// </summary>
@@ -1427,6 +1430,159 @@ namespace FactionTactics.Util
             }
 
             return names.Count > 0 ? string.Join(",", names) : "none";
+        }
+
+        /// <summary>
+        /// Resolve a display/prefab name for an enemy ZDO via ZNetScene prefab hash.
+        /// </summary>
+        public static bool TryGetEnemyPrefabName(ZDO zdo, out string prefabName)
+        {
+            prefabName = "";
+            if (zdo == null || ZNetScene.instance == null)
+                return false;
+            try
+            {
+                var hash = zdo.GetPrefab();
+                if (hash == 0)
+                    return false;
+                var go = ZNetScene.instance.GetPrefab(hash);
+                if (go == null)
+                    return false;
+                prefabName = go.name ?? "";
+                return !string.IsNullOrEmpty(prefabName);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 1.0.1 commander path: enemy ZDOs near players via prefab iterative + sector walks.
+        /// Does <b>not</b> require live MonsterAI / FindInstance — positions from ZDO.GetPosition().
+        /// Used when sticky/ownership is OFF so dedicated can still Write intents for client executors.
+        /// </summary>
+        public static List<ZDO> EnumerateEnemyZdosNearPlayers(float discoveryRadius)
+        {
+            var list = new List<ZDO>();
+            var seen = new HashSet<long>();
+            LastScanEnemyZdoCount = 0;
+
+            if (ZDOMan.instance == null || ZNetScene.instance == null)
+                return list;
+
+            var playerPositions = CollectPlayerPositions();
+            var radius = Mathf.Max(1f, discoveryRadius);
+            var radiusFilter = playerPositions.Count > 0;
+
+            void Consider(ZDO zdo)
+            {
+                if (zdo == null)
+                    return;
+                long key;
+                try { key = ValheimIds.ToLong(zdo.m_uid); }
+                catch { key = zdo.GetHashCode(); }
+                if (key == 0 || !seen.Add(key))
+                    return;
+                if (!IsLikelyEnemyPrefabZdo(zdo))
+                    return;
+
+                Vector3 pos;
+                try { pos = zdo.GetPosition(); }
+                catch { return; }
+
+                if (radiusFilter)
+                {
+                    var near = false;
+                    for (int i = 0; i < playerPositions.Count; i++)
+                    {
+                        if (Vector3.Distance(pos, playerPositions[i]) <= radius)
+                        {
+                            near = true;
+                            break;
+                        }
+                    }
+                    if (!near)
+                        return;
+                }
+
+                list.Add(zdo);
+            }
+
+            // Prefab iterative walk (all known enemy prefabs in ZDOMan).
+            try
+            {
+                var zdoBuf = new List<ZDO>();
+                foreach (var prefab in KnownEnemyPrefabs)
+                {
+                    zdoBuf.Clear();
+                    var index = 0;
+                    try
+                    {
+                        while (!ZDOMan.instance.GetAllZDOsWithPrefabIterative(prefab, zdoBuf, ref index))
+                        {
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        LogPathFailureOnce("EnumerateEnemyZdos.prefab:" + prefab, ex);
+                        continue;
+                    }
+
+                    foreach (var zdo in zdoBuf)
+                        Consider(zdo);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogPathFailureOnce("EnumerateEnemyZdos.prefabWalk", ex);
+            }
+
+            // Sector objects around player anchors (catches prefab-name variants).
+            try
+            {
+                if (playerPositions.Count > 0)
+                {
+                    var sectorObjects = new List<ZDO>();
+                    var distantObjects = new List<ZDO>();
+                    var simDist = SimulationDistance.OriginalDistance;
+                    foreach (var pos in playerPositions)
+                    {
+                        Vector2s zone;
+                        try { zone = ZoneSystem.GetZone(pos); }
+                        catch (Exception ex)
+                        {
+                            LogPathFailureOnce("EnumerateEnemyZdos.GetZone", ex);
+                            continue;
+                        }
+
+                        sectorObjects.Clear();
+                        distantObjects.Clear();
+                        try
+                        {
+                            ZDOMan.instance.FindSectorObjects(zone, simDist, sectorObjects, distantObjects);
+                        }
+                        catch (Exception ex)
+                        {
+                            LogPathFailureOnce("EnumerateEnemyZdos.FindSectorObjects", ex);
+                            continue;
+                        }
+
+                        foreach (var batch in new[] { sectorObjects, distantObjects })
+                        {
+                            foreach (var zdo in batch)
+                                Consider(zdo);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogPathFailureOnce("EnumerateEnemyZdos.sector", ex);
+            }
+
+            LastScanEnemyZdoCount = list.Count;
+            return list;
         }
 
         /// <summary>One-shot diagnostic for dedicated discovery paths.</summary>
