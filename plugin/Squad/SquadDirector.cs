@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using FactionTactics.Commander;
 using FactionTactics.Config;
 using FactionTactics.Doctrine;
@@ -66,6 +67,50 @@ namespace FactionTactics.Squad
 
         /// <summary>Test/diagnostics: currently tracked runtime FSM states.</summary>
         public IReadOnlyList<SquadRuntimeState> RuntimeStates => _runtime;
+
+        /// <summary>Last discovered cluster count (before minSize gate).</summary>
+        public int LastDiscoveredCount => _lastDiscoveredCount;
+
+        /// <summary>Console <c>ft status</c> lines (no prefix).</summary>
+        public IEnumerable<string> FormatStatusLines()
+        {
+            var orderCounts = new Dictionary<string, int>();
+            foreach (var s in _active)
+            {
+                var kind = s.CurrentOrder?.OrderKind.ToString() ?? "none";
+                var doctrine = s.Doctrine?.Id ?? "?";
+                var key = $"{doctrine}:{kind}";
+                orderCounts[key] = orderCounts.TryGetValue(key, out var c) ? c + 1 : 1;
+            }
+
+            var summary = "none";
+            if (orderCounts.Count > 0)
+            {
+                var parts = new List<string>();
+                foreach (var kv in orderCounts.OrderBy(k => k.Key, StringComparer.Ordinal))
+                    parts.Add($"{kv.Key}={kv.Value}");
+                summary = string.Join(", ", parts);
+            }
+
+            yield return $"squads: discovered={_lastDiscoveredCount} active={_active.Count} runtime={_runtime.Count}";
+            yield return $"orders: [{summary}]";
+
+            long zdoWrites = 0, schemaWrites = 0, zdoReads = 0, zdoStale = 0, schemaMismatch = 0, ownerDrives = 0;
+#if VALHEIM_REFS
+            zdoWrites = FactionTactics.Orders.IntentZdoSync.Writes;
+            schemaWrites = FactionTactics.Orders.IntentZdoSync.SchemaWrites;
+            zdoReads = FactionTactics.Orders.IntentZdoSync.ReadsOk;
+            zdoStale = FactionTactics.Orders.IntentZdoSync.ReadsStale;
+            schemaMismatch = FactionTactics.Orders.IntentZdoSync.SchemaMismatches;
+            ownerDrives = FactionTactics.HarmonyPatches.MonsterAI_UpdateAI_Patch.OwnerDriveCount;
+#endif
+            yield return $"zdo: writes={zdoWrites} schemaWrites={schemaWrites} readsOk={zdoReads} stale={zdoStale} mismatch={schemaMismatch} ownerDrives={ownerDrives}";
+
+            if (_discovery is SquadDiscovery sd)
+            {
+                yield return $"discovery: zdoCandidates={sd.LastZdoCandidateCount} prefabZdos={sd.LastPrefabZdos} prefabLive={sd.LastPrefabLive} mai={sd.LastPrefabMai}";
+            }
+        }
 
         public void Tick(float dt)
         {

@@ -28,14 +28,18 @@ namespace FactionTactics.Doctrine
 
         public override bool IsEnabled => PluginConfig.EnableAmbush?.Value ?? true;
 
-        /// <summary>Outside this → Hold/Kite lurk (meters).</summary>
+        /// <summary>Outside this → Hold/Kite lurk (meters). Default; live value from config.</summary>
         public const float OuterPocket = 18f;
 
-        /// <summary>Inner harassment band lower edge (meters).</summary>
+        /// <summary>Inner harassment band lower edge (meters). Default; live value from config.</summary>
         public const float InnerBand = 8f;
 
-        /// <summary>After Kite, re-encircle (Flank) once gap exceeds this.</summary>
+        /// <summary>After Kite, re-encircle (Flank) once gap exceeds this. Default; live value from config.</summary>
         public const float ReEncircleGap = 14f;
+
+        static float OuterPocketLive => PluginConfig.AmbushOuterPocket?.Value ?? OuterPocket;
+        static float InnerBandLive => PluginConfig.AmbushInnerBand?.Value ?? InnerBand;
+        static float ReEncircleGapLive => PluginConfig.AmbushReEncircleGap?.Value ?? ReEncircleGap;
 
         /// <summary>Rare envelope flash: nearest must be inside this.</summary>
         public const float EnvelopeFlashRange = 5f;
@@ -107,7 +111,7 @@ namespace FactionTactics.Doctrine
             if (snapshot.IsBroken || snapshot.CasualtyRatio >= AnxietyCasualties)
             {
                 if (previous == DoctrineOrderKind.Kite
-                    && snapshot.NearestThreatDistance > ReEncircleGap)
+                    && snapshot.NearestThreatDistance > ReEncircleGapLive)
                     return DoctrineOrderKind.Hold;
                 return DoctrineOrderKind.Kite;
             }
@@ -119,7 +123,7 @@ namespace FactionTactics.Doctrine
             // 4) After Kite until gap > 14f → Flank (re-encircle); else keep Kite
             if (previous == DoctrineOrderKind.Kite)
             {
-                if (snapshot.NearestThreatDistance > ReEncircleGap)
+                if (snapshot.NearestThreatDistance > ReEncircleGapLive)
                     return DoctrineOrderKind.Flank;
                 return DoctrineOrderKind.Kite;
             }
@@ -127,7 +131,7 @@ namespace FactionTactics.Doctrine
             var hasShaman = snapshot.CountByRole(SquadRole.Missile) > 0;
 
             // 5) Outside 18f → Hold/Kite
-            if (snapshot.NearestThreatDistance > OuterPocket)
+            if (snapshot.NearestThreatDistance > OuterPocketLive)
             {
                 if (previous == DoctrineOrderKind.Flank
                     || previous == DoctrineOrderKind.FocusFire
@@ -137,7 +141,7 @@ namespace FactionTactics.Doctrine
             }
 
             // 6) 8–18f → Flank (Orb) / shaman FocusFire from rear
-            if (snapshot.NearestThreatDistance > InnerBand)
+            if (snapshot.NearestThreatDistance > InnerBandLive)
             {
                 if (hasShaman
                     && previous != DoctrineOrderKind.Flank
@@ -178,7 +182,7 @@ namespace FactionTactics.Doctrine
         private static bool ShouldCommitFlash(SquadSnapshot snapshot, DoctrineOrderKind? previous)
         {
             if (snapshot.NearestThreatDistance > snapshot.ChargeRange
-                && snapshot.NearestThreatDistance > InnerBand)
+                && snapshot.NearestThreatDistance > InnerBandLive)
                 return false;
 
             // Isolate / stagger / low-HP: allow flash from Flank or FocusFire.

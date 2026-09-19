@@ -1,1 +1,1 @@
-Faction Tactics 1.0.1 Server — see INSTALL.md
+Faction Tactics 1.0.2 Server — see INSTALL.md

@@ -1,9 +1,18 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using BepInEx.Configuration;
 
 namespace FactionTactics.Config
 {
     public static class PluginConfig
     {
+        /// <summary>Bound ConfigFile for Save/Reload from console knobs.</summary>
+        public static ConfigFile? File { get; private set; }
+
+        private static readonly Dictionary<string, ConfigEntryBase> Knobs =
+            new Dictionary<string, ConfigEntryBase>(StringComparer.OrdinalIgnoreCase);
+
         public static ConfigEntry<bool> EnablePlugin { get; private set; } = null!;
         public static ConfigEntry<float> TickIntervalSeconds { get; private set; } = null!;
         public static ConfigEntry<int> MinSquadSize { get; private set; } = null!;
@@ -56,8 +65,16 @@ namespace FactionTactics.Config
         public static ConfigEntry<float> AmbushAmbiencePlayerRange { get; private set; } = null!;
         public static ConfigEntry<int> AmbushAmbienceMinSquadSize { get; private set; } = null!;
 
+        public static ConfigEntry<float> AmbushOuterPocket { get; private set; } = null!;
+        public static ConfigEntry<float> AmbushInnerBand { get; private set; } = null!;
+        public static ConfigEntry<float> AmbushReEncircleGap { get; private set; } = null!;
+
+
         public static void Bind(ConfigFile config)
         {
+            File = config;
+            Knobs.Clear();
+
             EnablePlugin = config.Bind(
                 "General",
                 "EnablePlugin",
@@ -282,6 +299,25 @@ namespace FactionTactics.Config
                 + "server-owned near peers. Non-enemies keep vanilla reclaim. Requires EnableEnemyServerOwnership. "
                 + "Default FALSE in 0.3.0 hybrid (client-owned combat). See docs/SERVER-COMBAT-AI-ROADMAP.md.");
 
+
+            AmbushOuterPocket = config.Bind(
+                "Doctrine",
+                "AmbushOuterPocket",
+                18f,
+                "Ambush: outside this distance (m) → Hold/Kite lurk.");
+
+            AmbushInnerBand = config.Bind(
+                "Doctrine",
+                "AmbushInnerBand",
+                8f,
+                "Ambush: inner harassment band lower edge (m); 8–OuterPocket → Flank.");
+
+            AmbushReEncircleGap = config.Bind(
+                "Doctrine",
+                "AmbushReEncircleGap",
+                14f,
+                "Ambush: after Kite, re-encircle (Flank) once gap exceeds this (m).");
+
             EnableAmbushAmbienceTemp = config.Bind(
                 "AmbushAmbienceTemp",
                 "EnableAmbushAmbienceTemp",
@@ -317,6 +353,63 @@ namespace FactionTactics.Config
                 "AmbushAmbienceMinSquadSize",
                 3,
                 "Minimum alive Ambush (Greydwarf) squad size before ambience can fire.");
+
+            RegisterAllKnobs();
+        }
+
+        private static void RegisterAllKnobs()
+        {
+            Register(
+                EnablePlugin, TickIntervalSeconds, MinSquadSize, DiscoveryRadius, SquadClusterRadius,
+                EnableRoman, RomanChargeRange, RomanPreferRanged,
+                EnableAmbush, AmbushOuterPocket, AmbushInnerBand, AmbushReEncircleGap,
+                EnableDeathRush, EnableDeathRushScream, DeathRushScreamCooldownSeconds, DeathRushMinSquadSize,
+                EnableVikingShieldWall, EnableSteppe, EnableInsectSiege, EnableCharredLegion,
+                EnablePackHunters, EnableArtilleryJelly, EnableTrollSynergy, TrollSynergyRange,
+                StructureDefenseRange, DvergrSoftenRange,
+                EnableSiegeAssault, WorkbenchTriggerRange, SiegeMinSquadSize, EnableSiegeAmbush, EnableSiegeViking,
+                DebugLogging, HeartbeatLogging,
+                EnableEnemyServerOwnership, EnemyOwnershipIntervalSeconds, EnemyOwnershipMaxCreatesPerTick,
+                EnableStickyEnemyOwnership, EnableZdoIntentSync, EnableOwnerCombatExecutor,
+                EnableAmbushAmbienceTemp, AmbushAmbienceFogEnvironment, AmbushAmbienceMessage,
+                AmbushAmbienceMessageCooldownSeconds, AmbushAmbiencePlayerRange, AmbushAmbienceMinSquadSize);
+        }
+
+        private static void Register(params ConfigEntryBase[] entries)
+        {
+            foreach (var e in entries)
+            {
+                if (e == null)
+                    continue;
+                Knobs[e.Definition.Key] = e;
+            }
+        }
+
+        public static bool TryGetKnob(string key, out ConfigEntryBase? entry)
+        {
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                entry = null;
+                return false;
+            }
+            return Knobs.TryGetValue(key.Trim(), out entry);
+        }
+
+        public static IEnumerable<string> KnobKeys =>
+            Knobs.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase);
+
+        public static IEnumerable<string> FormatKnobHelpLines()
+        {
+            foreach (var kv in Knobs.OrderBy(k => k.Key, StringComparer.OrdinalIgnoreCase))
+            {
+                var e = kv.Value;
+                var type = e.SettingType.Name;
+                var val = e.BoxedValue;
+                var valStr = val is float f
+                    ? f.ToString("G", System.Globalization.CultureInfo.InvariantCulture)
+                    : Convert.ToString(val, System.Globalization.CultureInfo.InvariantCulture);
+                yield return $"{e.Definition.Key} ({type}, {e.Definition.Section}) = {valStr}";
+            }
         }
     }
 }

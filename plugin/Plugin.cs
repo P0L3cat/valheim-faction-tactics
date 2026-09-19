@@ -3,6 +3,7 @@ using BepInEx;
 using BepInEx.Logging;
 using FactionTactics.Commander;
 using FactionTactics.Config;
+using FactionTactics.ConsoleCmds;
 using FactionTactics.Doctrine;
 using FactionTactics.HarmonyPatches;
 using FactionTactics.Orders;
@@ -24,13 +25,17 @@ namespace FactionTactics
     {
         public const string PluginGuid = "com.nate.factiontactics";
         public const string PluginName = "FactionTactics";
-        public const string PluginVersion = "1.0.1";
+        public const string PluginVersion = "1.0.2";
 
         internal static Plugin Instance { get; private set; } = null!;
         internal static ManualLogSource Log { get; private set; } = null!;
 
         private Harmony? _harmony;
         private SquadDirector? _director;
+
+        /// <summary>Live director for console status (null if disabled / not constructed).</summary>
+        internal SquadDirector? Director => _director;
+
 #if VALHEIM_REFS
         private EnemyOwnershipDirector? _enemyOwnership;
 #endif
@@ -66,11 +71,14 @@ namespace FactionTactics
             _enemyOwnership = new EnemyOwnershipDirector();
 #endif
 
+            // Console knobs always register so admins can ft set EnablePlugin without redeploy.
+            FtConsoleCommands.Register();
+
             if (PluginConfig.EnablePlugin.Value)
             {
                 _harmony = new Harmony(PluginGuid);
                 MonsterAIPatches.Apply(_harmony);
-                Log.LogInfo($"{PluginName} {PluginVersion} loaded (1.0.1 hybrid commander: ZDO-only discovery + ZDO intents; sticky/ownership default OFF; client executor for combat). Tick={PluginConfig.TickIntervalSeconds.Value}s");
+                Log.LogInfo($"{PluginName} {PluginVersion} loaded (1.0.2 hybrid commander: ZDO-only discovery + ZDO intents; sticky/ownership default OFF; client executor for combat). Tick={PluginConfig.TickIntervalSeconds.Value}s");
             }
             else
             {
