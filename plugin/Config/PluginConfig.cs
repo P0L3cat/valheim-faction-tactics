@@ -71,8 +71,8 @@ namespace FactionTactics.Config
                 "Squad",
                 "DiscoveryRadius",
                 64f,
-                "Max distance from any local player when scanning for faction allies. "
-                + "Distinct from SquadClusterRadius (how tight a squad groups).");
+                "Max distance from any local player when scanning for faction allies (default 64; was briefly "
+                + "documented as 40). Distinct from SquadClusterRadius (how tight a squad groups).");
 
             SquadClusterRadius = config.Bind(
                 "Squad",

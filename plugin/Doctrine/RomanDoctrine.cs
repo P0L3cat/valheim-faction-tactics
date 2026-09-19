@@ -10,8 +10,8 @@ namespace FactionTactics.Doctrine
     /// Skeleton* → Roman: shield wall + archers first, not charge-heavy.
     /// Default ProtectMissiles / FocusFire under ShieldWall when missiles + threat in range
     /// (not eternal Hold). Front HoldGround; missiles PreferKeepRange.
-    /// Advance only to close into the ~14–18m wall band; Charge almost never
-    /// (nearest &lt; RomanChargeRange default 3.5m AND no missiles, or morale last resort).
+    /// Advance only to close into the ~14–18m wall band; Charge almost never.
+    /// When PreferRanged: Charge only last-resort casualties (never default Charge).
     /// </summary>
     public sealed class RomanDoctrine : DoctrinePackBase
     {
@@ -151,10 +151,12 @@ namespace FactionTactics.Doctrine
             // Last resort: morale crumbling but not yet fully broken.
             var lastResort = snapshot.CasualtyRatio >= LastResortCasualtyRatio;
 
-            if (hasMissiles && preferRanged)
+            // PreferRanged: never default Charge — Hold/ProtectMissiles/FocusFire primacy
+            // even when missiles are gone. Charge only on last-resort casualties.
+            if (preferRanged)
                 return lastResort;
 
-            // No missile option → melee only when inside the tight band.
+            // PreferRanged off: melee commit when inside band and no missiles (or last resort).
             return !hasMissiles || lastResort;
         }
 

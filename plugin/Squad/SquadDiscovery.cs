@@ -198,7 +198,7 @@ namespace FactionTactics.Squad
                 LastPeakMonsterAiCount = LastMonsterAiCount;
 
             // Loud diagnostics: 0.1.9 smoke had updateAIHits climbing while monsterAI/candidates stayed 0.
-            // 0.1.11: suppress false warning when a later/live path already has MAs
+            // 0.2.0: suppress false warning when a later/live path already has MAs
             // (stale LastScan after double Discover, or registry/ownership filled after an empty pass).
             if (LastUpdateAIHits > 0 && LastMonsterAiCount == 0)
             {
@@ -215,7 +215,7 @@ namespace FactionTactics.Squad
                     if (PluginConfig.DebugLogging?.Value == true)
                     {
                         Plugin.Log?.LogDebug(
-                            $"SquadDiscovery 0.1.11: skip empty-enumerate warn " +
+                            $"SquadDiscovery 0.2.0: skip empty-enumerate warn " +
                             $"(updateAIHits={LastUpdateAIHits} thisScan=0 liveReg={liveReg} liveOwn={liveOwn} " +
                             $"liveScan={liveScan} peak={LastPeakMonsterAiCount}).");
                     }
@@ -224,7 +224,7 @@ namespace FactionTactics.Squad
                 {
                     _loggedEmptyEnumerateWarning = true;
                     Plugin.Log?.LogWarning(
-                        $"SquadDiscovery 0.1.11: updateAIHits={LastUpdateAIHits} but EnumerateMonsterAIs=0 " +
+                        $"SquadDiscovery 0.2.0: updateAIHits={LastUpdateAIHits} but EnumerateMonsterAIs=0 " +
                         $"(registry={LastRegistry} scene={LastSceneInstances} prefabMai={LastPrefabMai}). " +
                         "Ownership live cache / BaseAI.Instances harvest should feed discovery.");
                 }
@@ -232,16 +232,17 @@ namespace FactionTactics.Squad
             else if (LastMonsterAiCount > 0 && LastCandidateCount == 0)
             {
                 Plugin.Log?.LogWarning(
-                    $"SquadDiscovery 0.1.11: monsterAI={LastMonsterAiCount} but candidates=0 " +
+                    $"SquadDiscovery 0.2.0: monsterAI={LastMonsterAiCount} but candidates=0 " +
                     $"(dead={skippedDead} radius={skippedRadius} prefabMiss={skippedPrefab} " +
                     $"players={LastPlayerCount} radiusM={discoveryRadius} samplePrefabs=[{string.Join(",", prefabSamples)}]).");
             }
             else if (LastCandidateCount > 0)
             {
                 _loggedEmptyEnumerateWarning = false; // allow re-warn if discovery later goes empty again
+                var doctrineSummary = SummarizeDoctrines(list);
                 Plugin.Log?.LogInfo(
-                    $"SquadDiscovery 0.1.11: candidates={LastCandidateCount} monsterAI={LastMonsterAiCount} " +
-                    $"registry={LastRegistry} players={LastPlayerCount} (Roman/doctrine match OK).");
+                    $"SquadDiscovery 0.2.0: candidates={LastCandidateCount} monsterAI={LastMonsterAiCount} " +
+                    $"registry={LastRegistry} players={LastPlayerCount} doctrines=[{doctrineSummary}].");
             }
 #else
             // Without game DLLs discovery is empty; director/doctrine still unit-testable with injected views.
@@ -266,6 +267,21 @@ namespace FactionTactics.Squad
             LastCandidateCount = 0;
 #endif
             return list;
+        }
+
+
+        private static string SummarizeDoctrines(List<Candidate> candidates)
+        {
+            if (candidates == null || candidates.Count == 0)
+                return "";
+            var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var c in candidates)
+            {
+                var id = c.Doctrine?.Id ?? "?";
+                counts.TryGetValue(id, out var n);
+                counts[id] = n + 1;
+            }
+            return string.Join(",", counts.OrderBy(kv => kv.Key).Select(kv => $"{kv.Key}:{kv.Value}"));
         }
 
 #if VALHEIM_REFS

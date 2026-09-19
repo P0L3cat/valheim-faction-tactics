@@ -73,3 +73,15 @@ Fixes:
 - SquadDiscovery: suppress false `updateAIHits>0 but EnumerateMonsterAIs=0` when registry/ownership/peak already has MAs.
 
 Success: same spawn shows orders progressing (Hold/ProtectMissiles/FocusFire) and Nate feels a line instead of a bum-rush.
+
+
+## 0.2.0 combat authority (replace-not-augment)
+
+Nate lock 2026-09-19: FT is the **only** brain for squad members with `MemberIntent`.
+
+- `MonsterAI.UpdateAI` **Prefix** returns `false` when intent exists → vanilla UpdateAI skipped.
+- FT drives `MoveTo` / `StopMoving` / `LookAt` / `DoAttack` (plus private `UpdateTarget` for sensing).
+- Ownership / discovery / registry unchanged.
+- Full design: [`COMBAT-AUTHORITY-0.2.md`](./COMBAT-AUTHORITY-0.2.md).
+
+Do **not** deploy while Ungrull is online (no bounce).

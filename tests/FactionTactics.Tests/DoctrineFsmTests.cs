@@ -46,7 +46,7 @@ namespace FactionTactics.Tests
         }
 
         [Fact]
-        public void Roman_no_missiles_advances_then_holds_before_charge()
+        public void Roman_no_missiles_advances_then_holds_PreferRanged_no_default_Charge()
         {
             var cmd = FakeSnapshots.CreateCommander();
             var snap = FakeSnapshots.WithCombatRoles(FakeSnapshots.Base("roman", 4), front: 3, missile: 0, flanker: 0, leader: 1);
@@ -60,12 +60,21 @@ namespace FactionTactics.Tests
             holdLine.PreviousOrderKind = nameof(DoctrineOrderKind.Advance);
             Assert.Equal(DoctrineOrderKind.Hold, cmd.Propose(holdLine)!.OrderKind);
 
-            // Inside 3.5m charge band with no missiles → Charge last resort
-            var charge = FakeSnapshots.WithThreat(
+            // PreferRanged default: inside charge band with no missiles → still Hold (no default Charge)
+            var close = FakeSnapshots.WithThreat(
                 FakeSnapshots.WithCombatRoles(FakeSnapshots.Base("roman", 4), front: 3, missile: 0, flanker: 0, leader: 1),
                 3f);
-            charge.PreviousOrderKind = nameof(DoctrineOrderKind.Hold);
-            Assert.Equal(DoctrineOrderKind.Charge, cmd.Propose(charge)!.OrderKind);
+            close.PreviousOrderKind = nameof(DoctrineOrderKind.Hold);
+            close.CasualtyRatio = 0.1f;
+            Assert.Equal(DoctrineOrderKind.Hold, cmd.Propose(close)!.OrderKind);
+
+            // Last-resort casualties → Charge allowed under PreferRanged
+            var lastResort = FakeSnapshots.WithThreat(
+                FakeSnapshots.WithCombatRoles(FakeSnapshots.Base("roman", 4), front: 3, missile: 0, flanker: 0, leader: 1),
+                3f);
+            lastResort.PreviousOrderKind = nameof(DoctrineOrderKind.Hold);
+            lastResort.CasualtyRatio = 0.4f;
+            Assert.Equal(DoctrineOrderKind.Charge, cmd.Propose(lastResort)!.OrderKind);
 
             // 5m still outside charge band → Hold wall
             var stillHold = FakeSnapshots.WithThreat(
@@ -124,7 +133,7 @@ namespace FactionTactics.Tests
             // Outside pocket → Hold
             var hold = cmd.Propose(FakeSnapshots.WithThreat(FakeSnapshots.Ambush(), 30f));
             Assert.Equal(DoctrineOrderKind.Hold, hold!.OrderKind);
-            Assert.Equal(FormationType.Loose, hold.Formation);
+            Assert.Equal(FormationType.Orb, hold.Formation); // Orb primacy (0.2)
 
             // Enter pocket mid (8–18f) → FocusFire or Flank (Orb encircle)
             var mid = FakeSnapshots.WithThreat(FakeSnapshots.Ambush(), 12f);

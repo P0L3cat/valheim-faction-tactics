@@ -91,7 +91,10 @@ namespace FactionTactics.Commander
                         return (FormationType.Orb, StanceType.Defensive);
                     if (pack)
                         return (FormationType.Loose, StanceType.Defensive);
-                    if (ambush || insect)
+                    // Ambush: Orb primacy even on lurk Hold (ready to Flank/Kite); insect stays Loose.
+                    if (ambush)
+                        return (FormationType.Orb, StanceType.Defensive);
+                    if (insect)
                         return (FormationType.Loose, StanceType.Defensive);
                     // Roman / VikingShieldWall / CharredLegion: shield / dense ranks.
                     return (FormationType.ShieldWall, StanceType.Defensive);

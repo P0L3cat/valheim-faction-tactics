@@ -7,6 +7,10 @@
 - **Implemented packs:** Roman, Ambush (+ TrollFortress addon), VikingShieldWall, Steppe, InsectSiege, CharredLegion, PackHunters, ArtilleryJelly
 - **Siege Assault v1:** Assault-only; Ambush + Viking; workbench trigger; role-split when players present
 
+## Combat authority 0.2 (replace-not-augment)
+
+When a squad member has a live `MemberIntent`, **FT is the only brain**: Harmony Prefix on `MonsterAI.UpdateAI` returns `false` and skips vanilla. FT drives `MoveTo` / `StopMoving` / `LookAt` / `DoAttack`. Ownership and discovery stay. See [`docs/COMBAT-AUTHORITY-0.2.md`](docs/COMBAT-AUTHORITY-0.2.md).
+
 ## Layers
 ```
 [ICommander]  ← ScriptedCommander (v0) | future LlmCommander (documented, not coded)

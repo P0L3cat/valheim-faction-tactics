@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Collections.Generic;
 using BepInEx.Configuration;
 using FactionTactics.Commander;
@@ -19,7 +20,7 @@ namespace FactionTactics.Tests
         {
             if (_bound)
                 return;
-            PluginConfig.Bind(new ConfigFile());
+            PluginConfig.Bind(new ConfigFile(Path.Combine(Path.GetTempPath(), "faction-tactics-tests.cfg"), false));
             _bound = true;
         }
     }

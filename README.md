@@ -134,7 +134,7 @@ Pin the BepInExPack dependency version to whatever your host uses.
 | `General.EnablePlugin` | true | Master switch |
 | `General.TickIntervalSeconds` | 0.75 | SquadDirector tick |
 | `Squad.MinSquadSize` | 3 | Below → vanilla AI |
-| `Squad.DiscoveryRadius` | 40 | Ally scan radius from local players (≠ cluster radius) |
+| `Squad.DiscoveryRadius` | 64 | Ally scan radius from local players (≠ cluster radius) |
 | `Squad.SquadClusterRadius` | 18 | Cluster distance |
 | `Doctrine.EnableRoman` | true | Skeleton* Roman |
 | `Doctrine.EnableAmbush` | true | Greydwarf* Ambush |

@@ -457,6 +457,7 @@ namespace FactionTactics.Orders
         public long? FocusTargetId { get; set; }
         public bool HoldGround { get; set; }
         public bool PreferRun { get; set; }
+        /// <summary>0.2: FT may close on threat (Charge/hot assault). Does <b>not</b> run vanilla UpdateAI.</summary>
         public bool AllowVanillaChase { get; set; }
         /// <summary>Artillery jelly / kite: suppress melee chase into danger.</summary>
         public bool PreferKeepRange { get; set; }

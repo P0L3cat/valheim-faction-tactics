@@ -155,9 +155,9 @@ namespace FactionTactics.Doctrine
                 return DoctrineOrderKind.Flank;
             }
 
-            // 7) <8f → Flank/Kite unless ShouldCommitFlash (strict isolate / rare envelope)
+            // 7) <8f → Flank/Kite primacy; Charge only flash (isolate/stagger/rare envelope)
             if (ShouldCommitFlash(snapshot, previous))
-                return DoctrineOrderKind.Charge;
+                return DoctrineOrderKind.Charge; // flash only — never default swarm Charge
 
             // Prefer orbit Flank; peel to Kite if already close without a flash window
             // and not isolated (avoid slugfest).
