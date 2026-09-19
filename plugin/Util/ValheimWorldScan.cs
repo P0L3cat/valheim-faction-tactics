@@ -38,6 +38,7 @@ namespace FactionTactics.Util
         private static readonly string[] KnownEnemyPrefabs =
         {
             "Skeleton", "Skeleton_Poison", "Skeleton_NoArcher", "Skeleton_Hildir",
+            "Greyling",
             "Greydwarf", "Greydwarf_Elite", "Greydwarf_Shaman",
             "Draugr", "Draugr_Elite", "Draugr_Ranged",
             "Goblin", "GoblinShaman", "GoblinBrute", "Fuling",
@@ -802,6 +803,7 @@ namespace FactionTactics.Util
                 }
 
                 return name.StartsWith("Skeleton", StringComparison.OrdinalIgnoreCase)
+                    || name.StartsWith("Greyling", StringComparison.OrdinalIgnoreCase)
                     || name.StartsWith("Greydwarf", StringComparison.OrdinalIgnoreCase)
                     || name.StartsWith("Draugr", StringComparison.OrdinalIgnoreCase)
                     || name.StartsWith("Goblin", StringComparison.OrdinalIgnoreCase)

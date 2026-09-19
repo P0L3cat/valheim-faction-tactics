@@ -1,1 +1,1 @@
-Faction Tactics SERVER 0.3.0 — commander only. See INSTALL.md.
+Faction Tactics 1.0.0 Server — see INSTALL.md

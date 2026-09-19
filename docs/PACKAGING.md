@@ -1,4 +1,4 @@
-# Packaging 0.3.0
+# Packaging 1.0.0
 
 ## Artifacts
 
@@ -10,7 +10,7 @@
 | `dist/FactionTactics-Client-Thunderstore.zip` | Upload to Thunderstore (add icon.png first) |
 | `dist/INSTALL.md` | Canonical install steps |
 | `dist/DISCORD-BLURB.md` | #modding paste (don't post unless asked) |
-| `dist/SHA256SUMS.txt` | DLL hashes |
+| `dist/SHA256SUMS.txt` | DLL / zip hashes |
 
 ## Build
 
@@ -19,4 +19,4 @@ dotnet build plugin/FactionTactics.csproj -c Release
 dotnet build client/FactionTactics.Client.csproj -c Release
 ```
 
-Requires `refs/ValheimInstall` (VALHEIM_REFS). Version: `FtVersion.ProductVersion` = `0.3.0` in both assemblies.
+Requires `refs/ValheimInstall` (VALHEIM_REFS). Version: `FtVersion.ProductVersion` = `1.0.0` in both assemblies. Intent schema **v2** (DeathRush flag).

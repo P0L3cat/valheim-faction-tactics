@@ -28,5 +28,8 @@ namespace FactionTactics.Orders
         public bool AssaultMissileCover { get; set; }
         /// <summary>Quiet assault: leave vanilla structure targeting alone.</summary>
         public bool AllowVanillaStructure { get; set; }
+
+        /// <summary>Meadows Death-Rush: bee-line charge; client plays vanilla alert scream.</summary>
+        public bool DeathRush { get; set; }
     }
 }

@@ -1,5 +1,6 @@
 #if VALHEIM_REFS
 using System;
+using FactionTactics.Ambience;
 using FactionTactics.Doctrine;
 using FactionTactics.Orders;
 using FactionTactics.Util;
@@ -23,6 +24,7 @@ namespace FactionTactics.Combat
         public static void Drive(MonsterAI ai, MemberIntent intent, float dt)
         {
             DriveCount++;
+            PulseDeathRushAudio(ai, intent);
             CallUpdateTarget(ai, dt);
 
             var lineFront = IsLineFront(intent);
@@ -213,6 +215,19 @@ namespace FactionTactics.Combat
         {
             Traverse.Create(ai).Method("LookAt", new object[] { point }).GetValue();
         }
+
+        static void PulseDeathRushAudio(MonsterAI ai, MemberIntent intent)
+        {
+            if (intent == null || !intent.DeathRush)
+                return;
+#if !FT_CLIENT
+            // Server/listen-host: honor scream config. Client always plays when flag set.
+            if (FactionTactics.Config.PluginConfig.EnableDeathRushScream?.Value == false)
+                return;
+#endif
+            DeathRushAudio.PulseIfNeeded(ai, intent);
+        }
+
     }
 }
 #endif

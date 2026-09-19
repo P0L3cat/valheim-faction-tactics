@@ -1,8 +1,8 @@
 # Faction Tactics
 
-**0.3.0 hybrid:** server commander (`FactionTactics.dll`) + client executor (`FactionTactics.Client.dll`).
+**1.0.0 hybrid:** server commander (`FactionTactics.dll`) + client executor (`FactionTactics.Client.dll`).
 
-## Quick install (0.3.0)
+## Quick install (1.0.0)
 
 1. **Server:** unzip `dist/FactionTactics-Server.zip` → `BepInEx/plugins/FactionTactics.dll`
 2. **Players:** unzip `dist/FactionTactics-Client.zip` → `BepInEx/plugins/FactionTactics.Client.dll`
@@ -14,7 +14,7 @@ Thunderstore-ready trees: `thunderstore/server`, `thunderstore/client` (add `ico
 
 Valheim **BepInEx 5 + HarmonyX** plugin: doctrine packs + squad FSM (Route 1), with Route 2 scorer hooks and Route 3 `ICommander` / `SquadOrder` seams.
 
-**Implemented packs:** Roman, Ambush (+ Troll fortress), VikingShieldWall, Steppe, InsectSiege, CharredLegion, PackHunters, ArtilleryJelly.  
+**Implemented packs:** Roman, Death-Rush (Meadows Greyling), Ambush (+ Troll fortress), VikingShieldWall, Steppe, InsectSiege, CharredLegion, PackHunters, ArtilleryJelly.  
 **Siege Assault v1:** Assault-only for Ambush + VikingShieldWall (workbench trigger).
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) for the product lock.
@@ -30,6 +30,7 @@ This mod **only tunes AI behavior**. It does **not** spawn mobs, trigger extra r
 | Pack | Prefabs | Enable flag | Key FSM |
 |------|---------|-------------|---------|
 | Roman | `Skeleton*` | `EnableRoman` | Hold → Advance → FocusFire/ProtectMissiles → Charge/Flank → Reform |
+| Death-Rush | `Greyling` | `EnableDeathRush` | Threat → Charge bee-line (fight to death; no kite/retreat) |
 | Ambush | `Greydwarf*` | `EnableAmbush` | Hold → Flank → Charge (flash) → Reform → Kite (+ Troll synergy) |
 | VikingShieldWall | `Draugr*` | `EnableVikingShieldWall` | Shield wall Hold → Advance → archers FocusFire → Charge → Reform (choke bias indoors) |
 | Steppe | `Fuling*` / `Goblin*` | `EnableSteppe` | Kite → volley FocusFire → Flank encircle; berserk Charge only on cut-off; village orbit |

@@ -63,6 +63,7 @@
     <Compile Include="..\plugin\Util\FactionTacticsLog.cs" Link="Shared\FactionTacticsLog.cs" />
     <Compile Include="..\plugin\Util\ValheimIds.cs" Link="Shared\ValheimIds.cs" />
     <Compile Include="..\plugin\Combat\CombatDriver.cs" Link="Shared\CombatDriver.cs" />
+    <Compile Include="..\plugin\Ambience\DeathRushAudio.cs" Link="Shared\DeathRushAudio.cs" />
     <Compile Include="..\plugin\Orders\FtVersion.cs" Link="Shared\FtVersion.cs" />
 
   </ItemGroup>

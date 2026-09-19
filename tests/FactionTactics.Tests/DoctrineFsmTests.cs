@@ -296,5 +296,38 @@ namespace FactionTactics.Tests
                 Assert.Equal(DoctrineOrderKind.Hold, order!.OrderKind);
             }
         }
+
+        [Fact]
+        public void DeathRush_charges_under_threat_even_when_broken()
+        {
+            var cmd = FakeSnapshots.CreateCommander();
+            var snap = FakeSnapshots.WithThreat(FakeSnapshots.Base("death-rush", 2), 8f);
+            snap.IsBroken = true;
+            snap.CasualtyRatio = 0.9f;
+            Assert.Equal(DoctrineOrderKind.Charge, cmd.Propose(snap)!.OrderKind);
+        }
+
+        [Fact]
+        public void DeathRush_holds_only_with_no_threat()
+        {
+            var cmd = FakeSnapshots.CreateCommander();
+            var idle = FakeSnapshots.Base("death-rush", 2);
+            idle.ThreatCount = 0;
+            Assert.Equal(DoctrineOrderKind.Hold, cmd.Propose(idle)!.OrderKind);
+        }
+
+        [Fact]
+        public void DeathRush_never_kites_or_retreats()
+        {
+            var cmd = FakeSnapshots.CreateCommander();
+            var snap = FakeSnapshots.WithThreat(FakeSnapshots.Base("death-rush", 3), 12f);
+            snap.IsBroken = true;
+            snap.PreviousOrderKind = nameof(DoctrineOrderKind.Charge);
+            var order = cmd.Propose(snap)!;
+            Assert.Equal(DoctrineOrderKind.Charge, order.OrderKind);
+            Assert.NotEqual(DoctrineOrderKind.Kite, order.OrderKind);
+            Assert.NotEqual(DoctrineOrderKind.RetreatAndReform, order.OrderKind);
+        }
+
     }
 }

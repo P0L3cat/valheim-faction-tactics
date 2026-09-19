@@ -8,7 +8,7 @@ namespace FactionTactics.Orders
     /// </summary>
     public static class IntentZdoCodec
     {
-        public const int SchemaVersion = 1;
+        public const int SchemaVersion = 2;
 
         /// <summary>Max age (seconds) before a replicated intent is treated as stale.</summary>
         public const float StaleAfterSeconds = 6f;
@@ -25,6 +25,7 @@ namespace FactionTactics.Orders
             AssaultWallBreaker = 1 << 5,
             AssaultMissileCover = 1 << 6,
             AllowVanillaStructure = 1 << 7,
+            DeathRush = 1 << 8,
         }
 
         public static IntentFlags PackFlags(MemberIntent intent)
@@ -37,6 +38,7 @@ namespace FactionTactics.Orders
             if (intent.AssaultWallBreaker) f |= IntentFlags.AssaultWallBreaker;
             if (intent.AssaultMissileCover) f |= IntentFlags.AssaultMissileCover;
             if (intent.AllowVanillaStructure) f |= IntentFlags.AllowVanillaStructure;
+            if (intent.DeathRush) f |= IntentFlags.DeathRush;
             return f;
         }
 
@@ -49,6 +51,7 @@ namespace FactionTactics.Orders
             intent.AssaultWallBreaker = (flags & IntentFlags.AssaultWallBreaker) != 0;
             intent.AssaultMissileCover = (flags & IntentFlags.AssaultMissileCover) != 0;
             intent.AllowVanillaStructure = (flags & IntentFlags.AllowVanillaStructure) != 0;
+            intent.DeathRush = (flags & IntentFlags.DeathRush) != 0;
         }
 
         public static bool IsActive(IntentFlags flags) => (flags & IntentFlags.Active) != 0;

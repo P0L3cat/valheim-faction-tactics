@@ -13,6 +13,10 @@ namespace FactionTactics.Config
         public static ConfigEntry<float> RomanChargeRange { get; private set; } = null!;
         public static ConfigEntry<bool> RomanPreferRanged { get; private set; } = null!;
         public static ConfigEntry<bool> EnableAmbush { get; private set; } = null!;
+        public static ConfigEntry<bool> EnableDeathRush { get; private set; } = null!;
+        public static ConfigEntry<bool> EnableDeathRushScream { get; private set; } = null!;
+        public static ConfigEntry<float> DeathRushScreamCooldownSeconds { get; private set; } = null!;
+        public static ConfigEntry<int> DeathRushMinSquadSize { get; private set; } = null!;
         public static ConfigEntry<bool> EnableVikingShieldWall { get; private set; } = null!;
         public static ConfigEntry<bool> EnableSteppe { get; private set; } = null!;
         public static ConfigEntry<bool> EnableInsectSiege { get; private set; } = null!;
@@ -111,6 +115,27 @@ namespace FactionTactics.Config
                 "EnableAmbush",
                 true,
                 "Greydwarf* → Black Forest Ambush predators.");
+            EnableDeathRush = config.Bind(
+                "Doctrine",
+                "EnableDeathRush",
+                true,
+                "Meadows Greyling Death-Rush: bee-line charge, fight to the death (no flee). Behavior-only.");
+            EnableDeathRushScream = config.Bind(
+                "Doctrine",
+                "EnableDeathRushScream",
+                true,
+                "Play vanilla Greyling alert/hurt SFX on Death-Rush aggro/charge (no new assets).");
+            DeathRushScreamCooldownSeconds = config.Bind(
+                "Doctrine",
+                "DeathRushScreamCooldownSeconds",
+                4.5f,
+                "Minimum seconds between Death-Rush scream pulses per mob.");
+            DeathRushMinSquadSize = config.Bind(
+                "Doctrine",
+                "DeathRushMinSquadSize",
+                1,
+                "Min Greylings to form a Death-Rush squad (Meadows packs are often tiny).");
+
 
             EnableVikingShieldWall = config.Bind(
                 "Doctrine",

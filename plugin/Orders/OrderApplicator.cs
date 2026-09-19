@@ -30,6 +30,7 @@ namespace FactionTactics.Orders
             var charred = string.Equals(doctrineId, "charred-legion", System.StringComparison.OrdinalIgnoreCase);
             var roman = string.Equals(doctrineId, "roman", System.StringComparison.OrdinalIgnoreCase);
             var ambush = string.Equals(doctrineId, "ambush", System.StringComparison.OrdinalIgnoreCase);
+            var deathRush = string.Equals(doctrineId, "death-rush", System.StringComparison.OrdinalIgnoreCase);
             var index = 0;
             var count = squad.Members.Count;
 
@@ -130,6 +131,15 @@ namespace FactionTactics.Orders
                 if (ambush)
                     allowChase = order.OrderKind == DoctrineOrderKind.Charge;
 
+                // Death-Rush (Meadows Greyling): bee-line Charge — never HoldGround / PreferKeepRange / kite.
+                if (deathRush)
+                {
+                    holdGround = false;
+                    keepRange = false;
+                    if (order.OrderKind == DoctrineOrderKind.Charge)
+                        allowChase = true;
+                }
+
                 // Siege: hot wall-breakers chase / press (TestBreach).
                 // Quiet assault (AllowVanillaStructure): leave vanilla structure AI alone —
                 // PreferAllowVanillaStructure / do not force chase away from pieces.
@@ -213,12 +223,14 @@ namespace FactionTactics.Orders
                                 || order.OrderKind == DoctrineOrderKind.RetreatAndReform
                                 || order.OrderKind == DoctrineOrderKind.Kite
                                 || isCavalry
-                                || isWallBreaker,
+                                || isWallBreaker
+                                || deathRush,
                     AllowVanillaChase = allowChase,
                     PreferKeepRange = keepRange,
                     AssaultWallBreaker = isWallBreaker,
                     AssaultMissileCover = assaultMissileCover,
                     AllowVanillaStructure = allowVanillaStructure,
+                    DeathRush = deathRush,
                 };
 
                 Intents[member.InstanceId] = intent;

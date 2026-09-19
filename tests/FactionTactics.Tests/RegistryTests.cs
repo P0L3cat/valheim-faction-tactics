@@ -9,7 +9,7 @@ namespace FactionTactics.Tests
         public RegistryTests() => TestConfig.EnsureBound();
 
         [Fact]
-        public void CreateDefault_registers_all_eight_doctrine_packs()
+        public void CreateDefault_registers_all_nine_doctrine_packs()
         {
             var registry = DoctrinePackRegistry.CreateDefault();
             var ids = registry.All.Select(p => p.Id).OrderBy(x => x).ToArray();
@@ -20,6 +20,7 @@ namespace FactionTactics.Tests
 
         [Theory]
         [InlineData("roman", "Skeleton")]
+        [InlineData("death-rush", "Greyling")]
         [InlineData("ambush", "Greydwarf")]
         [InlineData("viking-shieldwall", "Draugr")]
         [InlineData("steppe", "Fuling")]
@@ -51,6 +52,15 @@ namespace FactionTactics.Tests
             Assert.False(ambush.MatchesPrefab("Greydwarf_Root"));
             Assert.False(ambush.MatchesPrefab("Greyling"));
             Assert.True(ambush.MatchesPrefab("Greydwarf_Elite"));
+        }
+
+        [Fact]
+        public void DeathRush_matches_Greyling_not_Greydwarf()
+        {
+            var dr = new DeathRushDoctrine();
+            Assert.True(dr.MatchesPrefab("Greyling"));
+            Assert.False(dr.MatchesPrefab("Greydwarf"));
+            Assert.False(dr.MatchesPrefab("Greydwarf_Elite"));
         }
     }
 }

@@ -18,6 +18,7 @@ namespace FactionTactics.Doctrine
             return new DoctrinePackRegistry(new IDoctrinePack[]
             {
                 new RomanDoctrine(),
+                new DeathRushDoctrine(),
                 new AmbushDoctrine(),
                 new VikingShieldWallDoctrine(),
                 new SteppeDoctrine(),

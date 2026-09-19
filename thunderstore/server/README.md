@@ -1,46 +1,40 @@
-# Faction Tactics 0.3.0 — Install (Ungrull / anyone)
-
-Hybrid **commander (server) + executor (client)**. Sticky server ownership is **OFF** by default so combat stays client-owned (smooth hits / motion).
+# Faction Tactics 1.0.0 — Install (Ungrull / anyone)
 
 ## What you need
 
-| Role | Zip | DLL |
-|------|-----|-----|
-| Dedicated / GPortal server | `FactionTactics-Server.zip` | `FactionTactics.dll` |
-| Every player (incl. admins) | `FactionTactics-Client.zip` | `FactionTactics.Client.dll` |
+| Who | Zip | Drops into |
+|-----|-----|------------|
+| **Dedicated / listen-host server** | `FactionTactics-Server.zip` | `BepInEx/plugins/FactionTactics.dll` |
+| **Every player client** | `FactionTactics-Client.zip` | `BepInEx/plugins/FactionTactics.Client.dll` |
 
-**Both must be the same product version (0.3.0).** Schema mismatch logs a loud error and ignores intents.
+**Both must be the same product version (1.0.0).** Schema mismatch logs a loud error and ignores intents.
 
-Dependency: **BepInEx 5** (Pack from Thunderstore). ValheimPlus is optional and not required.
+Requires **BepInEx 5** (HarmonyX). Behavior-only: does **not** raise spawn/raid/encounter rates.
 
-## Server (r2modman / manual)
+## Server (GPortal / dedicated / listen-host)
 
-1. Profile = **Dedicated server** (or copy into the server’s `BepInEx/plugins`).
-2. Install **BepInExPack** if missing.
-3. Drop **`FactionTactics.dll`** into `BepInEx/plugins/` (not the Client DLL).
-4. Boot once; confirm log: `FactionTactics 0.3.0 loaded (0.3.0 hybrid commander…`.
-5. Config `BepInEx/config/com.nate.factiontactics.cfg`:
-   - `EnableEnemyServerOwnership = false` (default)
-   - `EnableStickyEnemyOwnership = false` (default)
-   - `EnableZdoIntentSync = true`
-6. **Do not** put `FactionTactics.Client.dll` on a headless dedicated host (it idles, but keep the server pack clean).
+1. Install BepInEx 5 on the Valheim dedicated (or listen-host) profile.
+2. Unzip `FactionTactics-Server.zip` into the game root (or copy `FactionTactics.dll` into `BepInEx/plugins/`).
+3. Optional: Thunderstore / r2modman — import `FactionTactics-Server-Thunderstore.zip` into the **server** profile (add `icon.png` before Thunderstore upload; see `ICON.txt`).
+4. Boot once; confirm log: `FactionTactics 1.0.0 loaded (1.0.0 hybrid commander…`.
 
-## Client (every player — r2modman)
+Sticky enemy ownership / force server ownership stay **default OFF** (debug-only). Hybrid combat: server writes ZDO intents; owning client Drive.
 
-1. Game profile → Mods → Import the **Client** zip / Thunderstore client pack, **or** copy `FactionTactics.Client.dll` into the game’s `BepInEx/plugins/`.
-2. Confirm log: `FactionTactics.Client 0.3.0 loaded — owning-client combat executor…`.
-3. Join the FT server. Formations / Hold / MoveTo come from server ZDO intents; your client still **owns** nearby enemies for physics + hits.
+## Players (game clients)
 
-## Listen server (host in-game)
+1. Unzip `FactionTactics-Client.zip` → `BepInEx/plugins/FactionTactics.Client.dll` (or import Thunderstore client pack into the **game** profile).
+2. Confirm log: `FactionTactics.Client 1.0.0 loaded — owning-client combat executor…`.
+3. Join the server that runs matching **1.0.0** server DLL.
 
-Install **both** DLLs on the host PC (Server + Client packs), or Server alone (listen host runs executor when not dedicated). Players still need the Client DLL.
+Listen-host: install **both** DLLs on the host machine.
 
-## Version mismatch
+## Doctrines (v1)
 
-If you see `[FactionTactics] Intent schema mismatch` — reinstall **both** packs from the same 0.3.0 release. Do not mix 0.2.x server with 0.3 client.
+Roman, **Death-Rush** (Meadows Greyling), Ambush, VikingShieldWall, Steppe, InsectSiege, CharredLegion, PackHunters, ArtilleryJelly.  
+Siege Assault v1: Ambush + VikingShieldWall near workbench (no extra spawns).
 
-## Not included / not done by this pack
+Death-Rush: Greylings bee-line Charge and fight to the death (no kite/retreat). Optional vanilla alert SFX (`EnableDeathRushScream`).
 
-- No GPortal auto-deploy
-- No raise of spawn/raid rates
-- Sticky ownership remains debug-only behind config flags
+## Troubleshooting
+
+If you see `[FactionTactics] Intent schema mismatch` — reinstall **both** packs from the same 1.0.0 release. Do not mix 0.3.x / 0.2.x with 1.0.0.

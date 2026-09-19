@@ -15,6 +15,7 @@ namespace FactionTactics.Tests
                 AllowVanillaChase = false,
                 PreferKeepRange = true,
                 AssaultWallBreaker = true,
+                DeathRush = true,
             };
             var flags = IntentZdoCodec.PackFlags(intent);
             Assert.True(IntentZdoCodec.IsActive(flags));
@@ -25,6 +26,7 @@ namespace FactionTactics.Tests
             Assert.False(again.AllowVanillaChase);
             Assert.True(again.PreferKeepRange);
             Assert.True(again.AssaultWallBreaker);
+            Assert.True(again.DeathRush);
         }
 
         [Fact]
@@ -36,10 +38,10 @@ namespace FactionTactics.Tests
         }
 
         [Fact]
-        public void Product_and_schema_versions_are_0_3_0_v1()
+        public void Product_and_schema_versions_are_1_0_0_v2()
         {
-            Assert.Equal("0.3.0", FtVersion.ProductVersion);
-            Assert.Equal(1, FtVersion.IntentSchemaVersion);
+            Assert.Equal("1.0.0", FtVersion.ProductVersion);
+            Assert.Equal(2, FtVersion.IntentSchemaVersion);
             Assert.Equal(IntentZdoCodec.SchemaVersion, FtVersion.IntentSchemaVersion);
         }
     }

@@ -1,3 +1,4 @@
+<!-- Faction Tactics 1.0.0: hybrid + Death-Rush shipped. Sticky/ownership default OFF. -->
 # Server combat AI roadmap — 0.3.0 hybrid commander / executor
 
 **Date:** 2026-09-19 (America/Chicago)  

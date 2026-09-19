@@ -72,7 +72,6 @@ namespace FactionTactics.Squad
             _active.Clear();
             var discovered = _discovery.Discover();
             _lastDiscoveredCount = discovered.Count;
-            var minSize = PluginConfig.MinSquadSize?.Value ?? 3;
             var seen = new HashSet<SquadRuntimeState>();
 
             foreach (var squad in discovered)
@@ -86,6 +85,7 @@ namespace FactionTactics.Squad
                 var alive = CountAlive(squad);
                 var roster = squad.Members.Count;
                 var doctrineId = squad.Doctrine?.Id ?? "?";
+                var minSize = EffectiveMinSize(doctrineId);
                 state.PeakAlive = Math.Max(state.PeakAlive, Math.Max(alive, roster));
                 if (state.PeakAlive >= minSize)
                     state.EverMetMinSize = true;
@@ -346,7 +346,7 @@ Plugin.Log?.LogInfo(
             // NullRoleScorer returns 0 for all → keep doctrine assignment.
             // Non-null scorers: pick max score among doctrine-legal roles.
             // Use a lightweight assessment without mutating PeakAlive twice.
-            var minSize = PluginConfig.MinSquadSize?.Value ?? 3;
+            var minSize = EffectiveMinSize(squad.Doctrine?.Id);
             var state = FindRuntime(squad.SquadId);
             var threats = AssessThreats(squad, state, minSize);
             var snapshot = SquadSnapshot.FromSquad(squad, threats);
@@ -407,6 +407,19 @@ Plugin.Log?.LogInfo(
             }
 
             return order;
+        }
+
+
+        /// <summary>Per-doctrine min roster. Death-Rush defaults to 1 (tiny Meadows packs).</summary>
+        public static int EffectiveMinSize(string? doctrineId)
+        {
+            var global = PluginConfig.MinSquadSize?.Value ?? 3;
+            if (string.Equals(doctrineId, "death-rush", StringComparison.OrdinalIgnoreCase))
+            {
+                var dr = PluginConfig.DeathRushMinSquadSize?.Value ?? 1;
+                return Math.Max(1, Math.Min(dr, global));
+            }
+            return Math.Max(1, global);
         }
 
         private ThreatAssessment AssessThreats(SquadUnit squad, SquadRuntimeState? state, int minSize)

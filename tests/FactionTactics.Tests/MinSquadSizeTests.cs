@@ -40,5 +40,16 @@ namespace FactionTactics.Tests
             Assert.Null(small.CurrentOrder);
             Assert.NotNull(large.CurrentOrder);
         }
+
+        [Fact]
+        public void EffectiveMinSize_death_rush_can_be_one()
+        {
+            TestConfig.EnsureBound();
+            PluginConfig.MinSquadSize.Value = 3;
+            PluginConfig.DeathRushMinSquadSize.Value = 1;
+            Assert.Equal(1, SquadDirector.EffectiveMinSize("death-rush"));
+            Assert.Equal(3, SquadDirector.EffectiveMinSize("roman"));
+        }
+
     }
 }

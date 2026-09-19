@@ -134,6 +134,7 @@ namespace FactionTactics.Tests
         public static readonly string[] ExpectedDoctrineIds =
         {
             "roman",
+            "death-rush",
             "ambush",
             "viking-shieldwall",
             "steppe",
