@@ -24,7 +24,7 @@ namespace FactionTactics.HarmonyPatches
 #if VALHEIM_REFS
             harmony.PatchAll(typeof(MonsterAIPatches).Assembly);
             Plugin.Log.LogInfo(
-                "MonsterAI Harmony patches LIVE (VALHEIM_REFS 0.2.1): MonsterAI.UpdateAI Prefix skip-when-intent; " +
+                "MonsterAI Harmony patches LIVE (VALHEIM_REFS 0.2.2): MonsterAI.UpdateAI Prefix skip-when-intent; " +
                 "FT drives MoveTo/StopMoving/LookAt/DoAttack; BaseAI.MoveTo Prefix guard; " +
                 "registry OnEnable/Awake/AddInstance. Smoke: line/orbit without vanilla bum-rush, still attacks.");
 #else

@@ -154,8 +154,10 @@ namespace FactionTactics.Orders
                     // Chase players only, not structures — PreferKeepRange + AllowVanillaChase for combat target.
                 }
 
-                // Roman (and ShieldWall/Line Front): do not chase on Hold/Advance/ProtectMissiles.
-                // HoldGround when within FrontHoldSlotDist of slot; else MoveTo slot with AllowVanillaChase=false.
+                // Roman / ShieldWall Front: form up to slots FIRST, then pin.
+                // Bug (0.2.0–0.2.1): Hold always set HoldGround=true → DriveControlledAI StopMoving
+                // at spawn blob → log said ShieldWall but no visible line. Fix: HoldGround only
+                // when HorizontalDistance(member, slot) <= FrontHoldSlotDist.
                 var isFrontLine = member.AssignedRole == SquadRole.Front
                                   || member.AssignedRole == SquadRole.Leader;
                 var lineHoldingOrder = order.OrderKind == DoctrineOrderKind.Hold
@@ -164,42 +166,20 @@ namespace FactionTactics.Orders
                 var shieldOrLine = order.Formation == FormationType.ShieldWall
                                    || order.Formation == FormationType.Line;
 
+                var desired = slot;
                 if (!isWallBreaker && !isCavalry && !isMissile && isFrontLine && (roman || shieldOrLine))
                 {
-                    // Front on Hold/ProtectMissiles: always HoldGround + formation slot facing threat.
-                    if (order.OrderKind == DoctrineOrderKind.Hold
-                        || order.OrderKind == DoctrineOrderKind.ProtectMissiles)
-                    {
-                        holdGround = true;
-                        allowChase = false;
-                    }
-                    // Roman Advance/FocusFire: also pin Front to wall (StopMoving, no chase).
-                    else if (roman && (order.OrderKind == DoctrineOrderKind.Advance
-                                      || order.OrderKind == DoctrineOrderKind.FocusFire))
-                    {
-                        holdGround = true;
-                        allowChase = false;
-                    }
-                    else if (lineHoldingOrder)
-                    {
-                        var distToSlot = HorizontalDistance(member.Position, slot);
-                        holdGround = distToSlot <= FrontHoldSlotDist;
-                        allowChase = false; // only Charge allows chase for Front on line doctrines
-                    }
-                }
-
-                // DesiredPosition = formation slot (threat-facing basis) for Hold/ProtectMissiles Front.
-                // Charge only: approach threat. FocusFire missiles may keep slot (PreferKeepRange).
-                var desired = slot;
-                var frontHoldSlot = isFrontLine
-                    && !isMissile
-                    && (order.OrderKind == DoctrineOrderKind.Hold
-                        || order.OrderKind == DoctrineOrderKind.ProtectMissiles);
-                if (frontHoldSlot)
-                {
-                    desired = slot; // explicit: formation slot facing threat
-                    holdGround = true;
+                    var distToSlot = HorizontalDistance(member.Position, slot);
                     allowChase = false;
+                    if (order.OrderKind == DoctrineOrderKind.Hold
+                        || order.OrderKind == DoctrineOrderKind.ProtectMissiles
+                        || (roman && (order.OrderKind == DoctrineOrderKind.Advance
+                                      || order.OrderKind == DoctrineOrderKind.FocusFire))
+                        || lineHoldingOrder)
+                    {
+                        desired = slot;
+                        holdGround = distToSlot <= FrontHoldSlotDist;
+                    }
                 }
                 else if (!holdGround
                     && order.OrderKind == DoctrineOrderKind.Charge)
@@ -211,7 +191,7 @@ namespace FactionTactics.Orders
                 else if (!holdGround
                     && !keepRange
                     && order.OrderKind == DoctrineOrderKind.FocusFire
-                    && !roman) // non-Roman FocusFire may close; Roman Front already HoldGround
+                    && !roman)
                 {
                     var threat = TryGetThreatPosition(member, centroid);
                     if (threat.HasValue)
