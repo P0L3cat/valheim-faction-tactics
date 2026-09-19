@@ -46,3 +46,16 @@ From decompiled SSS `CreateDestroyObjects` / `ReleaseNearbyZDOS` patterns (local
 ## Deploy
 
 Build locally; **parent deploys to GPortal only after Nate approves bounce.** This PoC ships in the DLL only — no auto-deploy from this change.
+
+
+## 0.1.10 discovery capture
+
+Smoke on 0.1.9 proved ownership works (`enemyMai>0`, `updateAIHits` climbing, sceneDump shows Skeleton+MonsterAI) but `registry=0` / `monsterAI=0` / `squads=0`.
+
+Fixes:
+- `MonsterAIRegistry` stores by instance ID; **OnDisable no longer unregisters** (OnDestroy only).
+- `EnemyOwnershipDirector.SnapshotLiveMonsterAIs()` feeds `EnumerateMonsterAIs` as primary.
+- Early harvest of `BaseAI.GetAllInstances` / `BaseAIInstances` / `Instances` (same list MonoUpdaters uses).
+- Loud SquadDiscovery logs when UpdateAI hits but candidates stay 0.
+
+Success: `monsterAI`/`candidates`/`squads`/`orders` non-zero for ~8 skeletons near a peer (Roman Hold/ProtectMissiles).

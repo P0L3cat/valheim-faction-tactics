@@ -9,7 +9,7 @@ using UnityEngine;
 namespace FactionTactics.Dedicated
 {
     /// <summary>
-    /// Thin PoC (0.1.9): force server ZDO ownership + CreateObject for enemy prefabs near
+    /// 0.1.9 ownership PoC + 0.1.10 live MonsterAI cache for discovery: force server ZDO ownership + CreateObject for enemy prefabs near
     /// connected peers so MonsterAI.UpdateAI can run on dedicated Linux without full SSS.
     /// Does not patch ZoneSystem / CreateDestroyObjects; leaves trees, buildings, ships on
     /// vanilla client authority.
@@ -20,6 +20,9 @@ namespace FactionTactics.Dedicated
         private static bool _createObjectResolved;
         private static bool _loggedEnabled;
         private static bool _loggedCreateMissing;
+        private static readonly object LiveGate = new object();
+        private static readonly Dictionary<int, MonsterAI> LiveMonsterAIs = new Dictionary<int, MonsterAI>();
+        private static bool _loggedLiveCache;
 
         private float _age;
 
@@ -37,6 +40,60 @@ namespace FactionTactics.Dedicated
 
         /// <summary>Enemy ZDOs considered this last pass.</summary>
         public static int LastEnemySeen { get; private set; }
+
+        /// <summary>
+        /// Live MonsterAI components from the last ownership pass (and retained until destroyed).
+        /// Primary feed for SquadDiscovery when Harmony registry Snapshot was empty in 0.1.9 smoke.
+        /// </summary>
+        public static List<MonsterAI> SnapshotLiveMonsterAIs()
+        {
+            lock (LiveGate)
+            {
+                var list = new List<MonsterAI>(LiveMonsterAIs.Count);
+                var dead = new List<int>();
+                foreach (var kv in LiveMonsterAIs)
+                {
+                    try
+                    {
+                        if (kv.Value == null)
+                        {
+                            dead.Add(kv.Key);
+                            continue;
+                        }
+                        list.Add(kv.Value);
+                    }
+                    catch
+                    {
+                        dead.Add(kv.Key);
+                    }
+                }
+                foreach (var id in dead)
+                    LiveMonsterAIs.Remove(id);
+                return list;
+            }
+        }
+
+        private static void RememberLiveMonsterAI(MonsterAI? mai)
+        {
+            if (mai == null)
+                return;
+            int id;
+            try { id = mai.GetInstanceID(); }
+            catch { return; }
+            if (id == 0)
+                return;
+            lock (LiveGate)
+            {
+                LiveMonsterAIs[id] = mai;
+                if (!_loggedLiveCache)
+                {
+                    _loggedLiveCache = true;
+                    Plugin.Log?.LogInfo(
+                        $"EnemyOwnershipDirector: caching live MonsterAI for discovery id={id} name={mai.gameObject?.name}");
+                }
+            }
+            FactionTactics.HarmonyPatches.MonsterAIRegistry.Register(mai);
+        }
 
         public void Tick(float dt)
         {
@@ -187,15 +244,23 @@ namespace FactionTactics.Dedicated
                         live++;
                         try
                         {
-                            var hasMai = nv.GetComponent<MonsterAI>() != null
-                                         || nv.GetComponentInChildren<MonsterAI>(true) != null;
-                            if (hasMai)
+                            MonsterAI? foundMai = null;
+                            try { foundMai = nv.GetComponent<MonsterAI>(); } catch { /* ignore */ }
+                            if (foundMai == null)
+                            {
+                                try { foundMai = nv.GetComponentInChildren<MonsterAI>(true); } catch { /* ignore */ }
+                            }
+                            if (foundMai != null)
                             {
                                 mai++;
-                                FactionTactics.HarmonyPatches.MonsterAIRegistry.RegisterFromComponent(nv);
+                                RememberLiveMonsterAI(foundMai);
                             }
                         }
-                        catch { /* ignore */ }
+                        catch (Exception ex)
+                        {
+                            Plugin.Log?.LogWarning(
+                                $"EnemyOwnership live MA harvest failed: {ex.GetType().Name}: {ex.Message}");
+                        }
                     }
                 }
             }

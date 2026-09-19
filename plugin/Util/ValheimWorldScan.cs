@@ -124,8 +124,56 @@ namespace FactionTactics.Util
             var findObjects = 0;
             var findAll = 0;
             var registry = 0;
+            var ownershipLive = 0;
+            var baseAiListHits = 0;
 
-            // (0) Own Harmony registry — primary path when s_characters is empty on dedicated
+            // (0a) EnemyOwnershipDirector live cache — 0.1.10 PRIMARY when UpdateAI runs but registry was empty
+            try
+            {
+                var owned = FactionTactics.Dedicated.EnemyOwnershipDirector.SnapshotLiveMonsterAIs();
+                ownershipLive = owned.Count;
+                foreach (var ai in owned)
+                {
+                    if (ai == null)
+                        continue;
+                    if (!seen.Add(ai.GetInstanceID()))
+                        continue;
+                    list.Add(ai);
+                    FactionTactics.HarmonyPatches.MonsterAIRegistry.Register(ai);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogPathFailureOnce("EnemyOwnership.SnapshotLive", ex);
+            }
+
+            // (0b) BaseAI.GetAllInstances / BaseAIInstances / Instances — same list MonoUpdaters uses for UpdateAI
+            try
+            {
+                var before = list.Count;
+                try
+                {
+                    var allBai = BaseAI.GetAllInstances();
+                    if (allBai != null)
+                        TryAddMonsterAIs(allBai, list, seen);
+                }
+                catch (Exception ex) { LogPathFailureOnce("BaseAI.GetAllInstances.early", ex); }
+
+                try { TryAddMonsterAIs(BaseAI.BaseAIInstances, list, seen); }
+                catch (Exception ex) { LogPathFailureOnce("BaseAI.BaseAIInstances.early", ex); }
+
+                try { TryAddMonsterAIs(BaseAI.Instances, list, seen); }
+                catch (Exception ex) { LogPathFailureOnce("BaseAI.Instances.early", ex); }
+
+                baseAiListHits = list.Count - before;
+                baseAiInstances = Math.Max(baseAiInstances, baseAiListHits);
+            }
+            catch (Exception ex)
+            {
+                LogPathFailureOnce("BaseAI.earlyHarvest", ex);
+            }
+
+            // (0c) Own Harmony registry — kept as backup; 0.1.10 uses instance-id dict + no OnDisable clear
             try
             {
                 var reg = FactionTactics.HarmonyPatches.MonsterAIRegistry.Snapshot();
@@ -981,7 +1029,10 @@ namespace FactionTactics.Util
                 if (item is MonsterAI mai)
                 {
                     if (seen.Add(mai.GetInstanceID()))
+                    {
                         list.Add(mai);
+                        FactionTactics.HarmonyPatches.MonsterAIRegistry.Register(mai);
+                    }
                     continue;
                 }
 
@@ -991,7 +1042,26 @@ namespace FactionTactics.Util
                     {
                         var asMai = bai as MonsterAI ?? bai.GetComponent<MonsterAI>();
                         if (asMai != null && seen.Add(asMai.GetInstanceID()))
+                        {
                             list.Add(asMai);
+                            FactionTactics.HarmonyPatches.MonsterAIRegistry.Register(asMai);
+                        }
+                    }
+                    catch { /* ignore */ }
+                    continue;
+                }
+
+                // MonoUpdaters iterates List<IUpdateAI> — cast via Component
+                if (item is Component comp)
+                {
+                    try
+                    {
+                        var asMai = comp as MonsterAI ?? comp.GetComponent<MonsterAI>();
+                        if (asMai != null && seen.Add(asMai.GetInstanceID()))
+                        {
+                            list.Add(asMai);
+                            FactionTactics.HarmonyPatches.MonsterAIRegistry.Register(asMai);
+                        }
                     }
                     catch { /* ignore */ }
                 }
@@ -1363,14 +1433,20 @@ namespace FactionTactics.Util
             if (_loggedDedicatedDiscovery)
                 return;
             _loggedDedicatedDiscovery = true;
+            var ownership = 0;
+            var regDiag = "?";
+            try { ownership = FactionTactics.Dedicated.EnemyOwnershipDirector.SnapshotLiveMonsterAIs().Count; } catch { /* ignore */ }
+            try { regDiag = FactionTactics.HarmonyPatches.MonsterAIRegistry.Diagnostics(); } catch { /* ignore */ }
             Plugin.Log?.LogInfo(
-                $"dedicated discovery 0.1.8: chars={LastScanCharacterCount} " +
+                $"dedicated discovery 0.1.10: chars={LastScanCharacterCount} " +
                 $"baseAiInstances={LastScanBaseAiInstances} " +
                 $"sceneInstances={LastScanSceneInstances} sceneNr={LastScanSceneNrOfInstances} " +
                 $"prefabZdos={LastScanPrefabZdos} prefabLive={LastScanPrefabLive} prefabMai={LastScanPrefabMai} " +
                 $"findObjects={LastScanFindObjects} findAll={LastScanFindAll} registry={LastScanRegistry} animalAI={LastScanAnimalAi} " +
+                $"ownershipLive={ownership} regDiag=[{regDiag}] " +
                 $"playerZdos={LastScanPlayerZdoCount} players={players} monsterAI={monsterAi}");
         }
+
     }
 }
 #endif

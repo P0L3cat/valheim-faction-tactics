@@ -13,7 +13,7 @@ namespace FactionTactics.Doctrine
 
         public IReadOnlyList<string> PrefabPrefixes { get; } = new[] { "Draugr" };
 
-        public bool IsEnabled => PluginConfig.EnableViking?.Value ?? false;
+        public bool IsEnabled => false; // stub; real pack is VikingShieldWallDoctrine
 
         public bool MatchesPrefab(string prefabName)
         {

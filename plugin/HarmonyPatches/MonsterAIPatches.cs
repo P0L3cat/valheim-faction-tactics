@@ -13,7 +13,7 @@ namespace FactionTactics.HarmonyPatches
 {
     /// <summary>
     /// Harmony entry + MonsterAI / BaseAI steering + discovery patches.
-    /// 0.1.8: also postfix BaseAI.UpdateAI for dedicated diagnostics (baseAIUpdateHits).
+    /// 0.1.10: registry by instance-id (no OnDisable clear); also postfix BaseAI.UpdateAI for dedicated diagnostics (baseAIUpdateHits).
     /// </summary>
     public static class MonsterAIPatches
     {
@@ -22,7 +22,7 @@ namespace FactionTactics.HarmonyPatches
 #if VALHEIM_REFS
             harmony.PatchAll(typeof(MonsterAIPatches).Assembly);
             Plugin.Log.LogInfo(
-                "MonsterAI Harmony patches LIVE (VALHEIM_REFS 0.1.8): MonsterAI.UpdateAI + BaseAI.UpdateAI postfixes; " +
+                "MonsterAI Harmony patches LIVE (VALHEIM_REFS 0.1.10): MonsterAI.UpdateAI + BaseAI.UpdateAI postfixes; " +
                 "CallMoveTo for formation slots; HoldGround Front StopMoving; " +
                 "registry via OnEnable/Awake/AddInstance + BaseAI/AnimalAI. Needs in-game smoke test.");
 #else
@@ -160,23 +160,28 @@ namespace FactionTactics.HarmonyPatches
 
     /// <summary>
     /// Own AI registry — dedicated often has empty s_characters / FindObjectsOfType.
-    /// Holds MonsterAI for steering; also tracks BaseAI/AnimalAI for diagnostics.
+    /// 0.1.10: store by Unity instance ID (HashSet+Unity== was dropping live MAs);
+    /// do NOT unregister on OnDisable (MonoUpdaters still runs UpdateAI while enable flickers);
+    /// unregister only on OnDestroy. UpdateAI postfix keeps re-registering.
     /// </summary>
     public static class MonsterAIRegistry
     {
         private static readonly object Gate = new object();
-        private static readonly HashSet<MonsterAI> Live = new HashSet<MonsterAI>();
-        private static readonly HashSet<BaseAI> LiveBase = new HashSet<BaseAI>();
+        private static readonly Dictionary<int, MonsterAI> Live = new Dictionary<int, MonsterAI>();
+        private static readonly Dictionary<int, BaseAI> LiveBase = new Dictionary<int, BaseAI>();
         private static int _animalAiPeak;
+        private static int _registerEvents;
+        private static int _unregisterDestroyEvents;
+        private static bool _loggedFirstRegister;
 
         public static int Count
         {
-            get { lock (Gate) return Live.Count; }
+            get { lock (Gate) { PruneUnlocked(); return Live.Count; } }
         }
 
         public static int BaseCount
         {
-            get { lock (Gate) return LiveBase.Count; }
+            get { lock (Gate) { PruneUnlocked(); return LiveBase.Count; } }
         }
 
         /// <summary>Live AnimalAI currently in LiveBase (snapshot count).</summary>
@@ -186,8 +191,9 @@ namespace FactionTactics.HarmonyPatches
             {
                 lock (Gate)
                 {
+                    PruneUnlocked();
                     var n = 0;
-                    foreach (var b in LiveBase)
+                    foreach (var b in LiveBase.Values)
                     {
                         try
                         {
@@ -206,20 +212,69 @@ namespace FactionTactics.HarmonyPatches
             get { lock (Gate) return _animalAiPeak; }
         }
 
+        /// <summary>True only when the managed wrapper is gone (not Unity fake-null alone).</summary>
+        private static bool IsManagedNull(UnityEngine.Object? obj)
+            => ReferenceEquals(obj, null);
+
+        /// <summary>Unity destroyed / missing component (overloaded ==).</summary>
+        private static bool IsUnityDestroyed(UnityEngine.Object? obj)
+            => !ReferenceEquals(obj, null) && obj == null;
+
+        private static void PruneUnlocked()
+        {
+            if (Live.Count > 0)
+            {
+                var dead = new List<int>();
+                foreach (var kv in Live)
+                {
+                    if (IsManagedNull(kv.Value) || IsUnityDestroyed(kv.Value))
+                        dead.Add(kv.Key);
+                }
+                foreach (var id in dead)
+                    Live.Remove(id);
+            }
+
+            if (LiveBase.Count > 0)
+            {
+                var deadB = new List<int>();
+                foreach (var kv in LiveBase)
+                {
+                    if (IsManagedNull(kv.Value) || IsUnityDestroyed(kv.Value))
+                        deadB.Add(kv.Key);
+                }
+                foreach (var id in deadB)
+                    LiveBase.Remove(id);
+            }
+        }
+
         public static void Register(MonsterAI? ai)
         {
-            if (ai == null)
+            if (IsManagedNull(ai) || IsUnityDestroyed(ai))
                 return;
+            int id;
+            try { id = ai!.GetInstanceID(); }
+            catch { return; }
+            if (id == 0)
+                return;
+
             lock (Gate)
             {
-                Live.Add(ai);
-                LiveBase.Add(ai);
+                Live[id] = ai!;
+                LiveBase[id] = ai!;
+                _registerEvents++;
+                if (!_loggedFirstRegister)
+                {
+                    _loggedFirstRegister = true;
+                    Plugin.Log?.LogInfo(
+                        $"MonsterAIRegistry: first Register id={id} name={SafeName(ai)} " +
+                        $"(UpdateAI re-registers; OnDisable no longer clears).");
+                }
             }
         }
 
         public static void RegisterBase(BaseAI? ai)
         {
-            if (ai == null)
+            if (IsManagedNull(ai) || IsUnityDestroyed(ai))
                 return;
             if (ai is MonsterAI mai)
             {
@@ -227,13 +282,19 @@ namespace FactionTactics.HarmonyPatches
                 return;
             }
 
+            int id;
+            try { id = ai!.GetInstanceID(); }
+            catch { return; }
+            if (id == 0)
+                return;
+
             lock (Gate)
             {
-                LiveBase.Add(ai);
+                LiveBase[id] = ai!;
                 if (ai is AnimalAI)
                 {
                     var n = 0;
-                    foreach (var b in LiveBase)
+                    foreach (var b in LiveBase.Values)
                     {
                         try
                         {
@@ -250,18 +311,22 @@ namespace FactionTactics.HarmonyPatches
 
         public static void Unregister(MonsterAI? ai)
         {
-            if (ai == null)
+            if (IsManagedNull(ai))
                 return;
+            int id;
+            try { id = ai!.GetInstanceID(); }
+            catch { return; }
             lock (Gate)
             {
-                Live.Remove(ai);
-                LiveBase.Remove(ai);
+                Live.Remove(id);
+                LiveBase.Remove(id);
+                _unregisterDestroyEvents++;
             }
         }
 
         public static void UnregisterBase(BaseAI? ai)
         {
-            if (ai == null)
+            if (IsManagedNull(ai))
                 return;
             if (ai is MonsterAI mai)
             {
@@ -269,24 +334,27 @@ namespace FactionTactics.HarmonyPatches
                 return;
             }
 
+            int id;
+            try { id = ai!.GetInstanceID(); }
+            catch { return; }
             lock (Gate)
-                LiveBase.Remove(ai);
+                LiveBase.Remove(id);
         }
 
         public static void RegisterFromComponent(Component? c)
         {
-            if (c == null)
+            if (IsManagedNull(c) || IsUnityDestroyed(c))
                 return;
             try
             {
                 MonsterAI? mai = c as MonsterAI;
                 if (mai == null)
                 {
-                    try { mai = c.GetComponent<MonsterAI>(); } catch { /* ignore */ }
+                    try { mai = c!.GetComponent<MonsterAI>(); } catch { /* ignore */ }
                 }
                 if (mai == null)
                 {
-                    try { mai = c.GetComponentInChildren<MonsterAI>(true); } catch { /* ignore */ }
+                    try { mai = c!.GetComponentInChildren<MonsterAI>(true); } catch { /* ignore */ }
                 }
                 if (mai != null)
                 {
@@ -297,11 +365,11 @@ namespace FactionTactics.HarmonyPatches
                 BaseAI? bai = c as BaseAI;
                 if (bai == null)
                 {
-                    try { bai = c.GetComponent<BaseAI>(); } catch { /* ignore */ }
+                    try { bai = c!.GetComponent<BaseAI>(); } catch { /* ignore */ }
                 }
                 if (bai == null)
                 {
-                    try { bai = c.GetComponentInChildren<BaseAI>(true); } catch { /* ignore */ }
+                    try { bai = c!.GetComponentInChildren<BaseAI>(true); } catch { /* ignore */ }
                 }
                 if (bai != null)
                 {
@@ -312,11 +380,11 @@ namespace FactionTactics.HarmonyPatches
                 Character? ch = c as Character;
                 if (ch == null)
                 {
-                    try { ch = c.GetComponent<Character>(); } catch { /* ignore */ }
+                    try { ch = c!.GetComponent<Character>(); } catch { /* ignore */ }
                 }
                 if (ch == null)
                 {
-                    try { ch = c.GetComponentInChildren<Character>(true); } catch { /* ignore */ }
+                    try { ch = c!.GetComponentInChildren<Character>(true); } catch { /* ignore */ }
                 }
                 if (ch != null)
                 {
@@ -329,7 +397,11 @@ namespace FactionTactics.HarmonyPatches
                     catch { /* ignore */ }
                 }
             }
-            catch { /* ignore */ }
+            catch (Exception ex)
+            {
+                Plugin.Log?.LogWarning(
+                    $"MonsterAIRegistry.RegisterFromComponent failed: {ex.GetType().Name}: {ex.Message}");
+            }
         }
 
         /// <summary>Copy live MonsterAI entries; prune destroyed/null.</summary>
@@ -337,14 +409,13 @@ namespace FactionTactics.HarmonyPatches
         {
             lock (Gate)
             {
+                PruneUnlocked();
                 var list = new List<MonsterAI>(Live.Count);
-                Live.RemoveWhere(ai => ai == null);
-                LiveBase.RemoveWhere(ai => ai == null);
-                foreach (var ai in Live)
+                foreach (var ai in Live.Values)
                 {
                     try
                     {
-                        if (ai == null)
+                        if (IsManagedNull(ai) || IsUnityDestroyed(ai))
                             continue;
                         list.Add(ai);
                     }
@@ -358,13 +429,13 @@ namespace FactionTactics.HarmonyPatches
         {
             lock (Gate)
             {
+                PruneUnlocked();
                 var list = new List<BaseAI>(LiveBase.Count);
-                LiveBase.RemoveWhere(ai => ai == null);
-                foreach (var ai in LiveBase)
+                foreach (var ai in LiveBase.Values)
                 {
                     try
                     {
-                        if (ai == null)
+                        if (IsManagedNull(ai) || IsUnityDestroyed(ai))
                             continue;
                         list.Add(ai);
                     }
@@ -372,6 +443,22 @@ namespace FactionTactics.HarmonyPatches
                 }
                 return list;
             }
+        }
+
+        public static string Diagnostics()
+        {
+            lock (Gate)
+            {
+                PruneUnlocked();
+                return $"live={Live.Count} liveBase={LiveBase.Count} registerEvents={_registerEvents} " +
+                       $"destroyUnregisters={_unregisterDestroyEvents}";
+            }
+        }
+
+        private static string SafeName(MonsterAI? ai)
+        {
+            try { return ai != null && ai.gameObject != null ? ai.gameObject.name : "?"; }
+            catch { return "?"; }
         }
     }
 
@@ -383,8 +470,23 @@ namespace FactionTactics.HarmonyPatches
             => MonsterAIRegistry.RegisterBase(__instance);
     }
 
+    /// <summary>
+    /// Intentionally does NOT unregister. On dedicated, BaseAI can disable/enable while
+    /// MonoUpdaters still invokes UpdateAI; clearing here emptied registry while updateAIHits climbed.
+    /// </summary>
     [HarmonyPatch(typeof(BaseAI), "OnDisable")]
     public static class BaseAI_OnDisable_RegistryPatch
+    {
+        [HarmonyPostfix]
+        public static void Postfix(BaseAI __instance)
+        {
+            // Keep registry entries; UpdateAI + ownership director re-assert registration.
+            _ = __instance;
+        }
+    }
+
+    [HarmonyPatch(typeof(BaseAI), "OnDestroy")]
+    public static class BaseAI_OnDestroy_RegistryPatch
     {
         [HarmonyPostfix]
         public static void Postfix(BaseAI __instance)

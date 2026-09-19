@@ -13,7 +13,7 @@ namespace FactionTactics.Doctrine
 
         public IReadOnlyList<string> PrefabPrefixes { get; } = new[] { "Goblin", "Fuling" };
 
-        public bool IsEnabled => PluginConfig.EnableMongol?.Value ?? false;
+        public bool IsEnabled => false; // stub; Fuling* covered by Steppe/Goblin packs
 
         public bool MatchesPrefab(string prefabName)
         {

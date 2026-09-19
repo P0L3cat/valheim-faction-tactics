@@ -152,19 +152,35 @@ namespace FactionTactics.Squad
                 LastPlayerCount = Math.Max(LastPlayerCount, ValheimWorldScan.LastScanPlayerCount);
             ValheimWorldScan.LogDedicatedDiscoveryOnce(LastPlayerCount, LastMonsterAiCount);
 
+            var skippedDead = 0;
+            var skippedRadius = 0;
+            var skippedPrefab = 0;
+            var prefabSamples = new List<string>();
+
             foreach (var ai in ais)
             {
                 var ch = ValheimIds.GetCharacter(ai);
                 if (ch == null || ch.IsDead())
+                {
+                    skippedDead++;
                     continue;
+                }
 
                 if (playerPositions.Count > 0 && !WithinAny(ch.transform.position, playerPositions, discoveryRadius))
+                {
+                    skippedRadius++;
                     continue;
+                }
 
                 var prefab = SanitizePrefabName(ch.name);
                 var pack = _registry.ResolveByPrefab(prefab);
                 if (pack == null)
+                {
+                    skippedPrefab++;
+                    if (prefabSamples.Count < 8 && !string.IsNullOrEmpty(prefab))
+                        prefabSamples.Add(prefab);
                     continue;
+                }
 
                 list.Add(new Candidate
                 {
@@ -173,6 +189,28 @@ namespace FactionTactics.Squad
                 });
             }
             LastCandidateCount = list.Count;
+
+            // Loud diagnostics: 0.1.9 smoke had updateAIHits climbing while monsterAI/candidates stayed 0.
+            if (LastUpdateAIHits > 0 && LastMonsterAiCount == 0)
+            {
+                Plugin.Log?.LogWarning(
+                    $"SquadDiscovery 0.1.10: updateAIHits={LastUpdateAIHits} but EnumerateMonsterAIs=0 " +
+                    $"(registry={LastRegistry} scene={LastSceneInstances} prefabMai={LastPrefabMai}). " +
+                    "Ownership live cache / BaseAI.Instances harvest should feed discovery.");
+            }
+            else if (LastMonsterAiCount > 0 && LastCandidateCount == 0)
+            {
+                Plugin.Log?.LogWarning(
+                    $"SquadDiscovery 0.1.10: monsterAI={LastMonsterAiCount} but candidates=0 " +
+                    $"(dead={skippedDead} radius={skippedRadius} prefabMiss={skippedPrefab} " +
+                    $"players={LastPlayerCount} radiusM={discoveryRadius} samplePrefabs=[{string.Join(",", prefabSamples)}]).");
+            }
+            else if (LastCandidateCount > 0)
+            {
+                Plugin.Log?.LogInfo(
+                    $"SquadDiscovery 0.1.10: candidates={LastCandidateCount} monsterAI={LastMonsterAiCount} " +
+                    $"registry={LastRegistry} players={LastPlayerCount} (Roman/doctrine match OK).");
+            }
 #else
             // Without game DLLs discovery is empty; director/doctrine still unit-testable with injected views.
             // DiscoveryRadius is still a config knob for VALHEIM_REFS builds (cluster radius ≠ discovery radius).
