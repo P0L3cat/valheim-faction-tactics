@@ -9,10 +9,11 @@ using UnityEngine;
 namespace FactionTactics.Dedicated
 {
     /// <summary>
-    /// 0.1.9 ownership PoC + 0.1.10 live MonsterAI cache for discovery: force server ZDO ownership + CreateObject for enemy prefabs near
-    /// connected peers so MonsterAI.UpdateAI can run on dedicated Linux without full SSS.
+    /// 0.1.9 ownership PoC + 0.1.10 live MonsterAI cache + 0.2.3 sticky reclaim:
+    /// force server ZDO ownership + CreateObject for enemy prefabs near connected peers so
+    /// MonsterAI.UpdateAI can run on dedicated Linux without full SSS.
     /// Does not patch ZoneSystem / CreateDestroyObjects; leaves trees, buildings, ships on
-    /// vanilla client authority.
+    /// vanilla client authority. Reclaim defense lives in ZDOMan.ReleaseNearbyZDOS Prefix.
     /// </summary>
     public sealed class EnemyOwnershipDirector
     {
@@ -23,11 +24,22 @@ namespace FactionTactics.Dedicated
         private static readonly object LiveGate = new object();
         private static readonly Dictionary<int, MonsterAI> LiveMonsterAIs = new Dictionary<int, MonsterAI>();
         private static bool _loggedLiveCache;
+        private static float _reclaimFightLogAge;
+        private static int _pendingReclaimFights;
 
         private float _age;
 
         /// <summary>Enemy ZDOs claimed by server this last pass (or already owned).</summary>
         public static int LastEnemyOwned { get; private set; }
+
+        /// <summary>Enemy ZDOs whose GetOwner() == server UID after pass.</summary>
+        public static int LastEnemyServerOwned { get; private set; }
+
+        /// <summary>Enemy ZDOs whose GetOwner() is a non-server peer after pass.</summary>
+        public static int LastEnemyClientOwned { get; private set; }
+
+        /// <summary>Times this pass we stole ownership from a non-server owner.</summary>
+        public static int LastEnemyReclaims { get; private set; }
 
         /// <summary>Enemy ZDOs with live ZNetScene.FindInstance after pass.</summary>
         public static int LastEnemyLive { get; private set; }
@@ -109,9 +121,10 @@ namespace FactionTactics.Dedicated
             if (!_loggedEnabled)
             {
                 _loggedEnabled = true;
+                var sticky = PluginConfig.EnableStickyEnemyOwnership?.Value == true;
                 Plugin.Log?.LogInfo(
                     "EnemyOwnershipDirector enabled (PoC): server SetOwner + CreateObject for enemy prefabs near peers; " +
-                    "trees/buildings/ships left on vanilla client authority.");
+                    $"stickyReleaseNearby={sticky}; trees/buildings/ships left on vanilla client authority.");
             }
 
             var interval = Math.Max(0.25f, PluginConfig.EnemyOwnershipIntervalSeconds?.Value ?? 1f);
@@ -121,6 +134,9 @@ namespace FactionTactics.Dedicated
             _age = 0f;
 
             LastEnemyOwned = 0;
+            LastEnemyServerOwned = 0;
+            LastEnemyClientOwned = 0;
+            LastEnemyReclaims = 0;
             LastEnemyLive = 0;
             LastEnemyMai = 0;
             LastCreates = 0;
@@ -152,6 +168,9 @@ namespace FactionTactics.Dedicated
             var maxCreates = Math.Max(1, PluginConfig.EnemyOwnershipMaxCreatesPerTick?.Value ?? 16);
             var creates = 0;
             var owned = 0;
+            var serverOwned = 0;
+            var clientOwned = 0;
+            var reclaims = 0;
             var live = 0;
             var mai = 0;
             var seen = 0;
@@ -210,8 +229,21 @@ namespace FactionTactics.Dedicated
 
                         try
                         {
-                            if (!zdo.IsOwner())
+                            long ownerBefore;
+                            try { ownerBefore = zdo.GetOwner(); }
+                            catch { ownerBefore = 0L; }
+
+                            // 0.2.3: always re-claim when owner != server (not only when !IsOwner).
+                            if (ownerBefore != serverUid)
+                            {
                                 zdo.SetOwner(serverUid);
+                                if (ownerBefore != 0L)
+                                {
+                                    reclaims++;
+                                    _pendingReclaimFights++;
+                                    MaybeLogReclaimFight(ownerBefore, serverUid);
+                                }
+                            }
                             owned++;
                         }
                         catch (Exception ex)
@@ -223,6 +255,14 @@ namespace FactionTactics.Dedicated
                             }
                             continue;
                         }
+
+                        long ownerAfter;
+                        try { ownerAfter = zdo.GetOwner(); }
+                        catch { ownerAfter = 0L; }
+                        if (ownerAfter == serverUid)
+                            serverOwned++;
+                        else if (ownerAfter != 0L)
+                            clientOwned++;
 
                         ZNetView? nv = null;
                         try { nv = ZNetScene.instance.FindInstance(zdo); }
@@ -267,9 +307,32 @@ namespace FactionTactics.Dedicated
 
             LastEnemySeen = seen;
             LastEnemyOwned = owned;
+            LastEnemyServerOwned = serverOwned;
+            LastEnemyClientOwned = clientOwned;
+            LastEnemyReclaims = reclaims;
             LastEnemyLive = live;
             LastEnemyMai = mai;
             LastCreates = creates;
+        }
+
+        private static void MaybeLogReclaimFight(long fromOwner, long serverUid)
+        {
+            float now;
+            try { now = Time.unscaledTime; }
+            catch { now = 0f; }
+
+            if (_reclaimFightLogAge > 0f && now - _reclaimFightLogAge < 5f)
+                return;
+            if (_pendingReclaimFights <= 0)
+                return;
+
+            _reclaimFightLogAge = now;
+            var n = _pendingReclaimFights;
+            _pendingReclaimFights = 0;
+            Plugin.Log?.LogInfo(
+                $"EnemyOwnershipDirector: reclaim fight — stole {n} enemy ZDO(s) from non-server " +
+                $"(example from={fromOwner} → server={serverUid}). " +
+                "If this keeps firing every pass, ReleaseNearby sticky may be off or losing.");
         }
 
         private static bool TryCreateObject(ZDO zdo)

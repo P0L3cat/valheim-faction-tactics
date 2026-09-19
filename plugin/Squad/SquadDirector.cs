@@ -244,10 +244,20 @@ namespace FactionTactics.Squad
             var enemyOwned = 0;
             var enemyLive = 0;
             var enemyMai = 0;
+            var enemyServerOwned = 0;
+            var enemyClientOwned = 0;
+            var enemyReclaims = 0;
+            var stickyKeeps = 0;
+            var stickyReclaims = 0;
 #if VALHEIM_REFS
             enemyOwned = FactionTactics.Dedicated.EnemyOwnershipDirector.LastEnemyOwned;
             enemyLive = FactionTactics.Dedicated.EnemyOwnershipDirector.LastEnemyLive;
             enemyMai = FactionTactics.Dedicated.EnemyOwnershipDirector.LastEnemyMai;
+            enemyServerOwned = FactionTactics.Dedicated.EnemyOwnershipDirector.LastEnemyServerOwned;
+            enemyClientOwned = FactionTactics.Dedicated.EnemyOwnershipDirector.LastEnemyClientOwned;
+            enemyReclaims = FactionTactics.Dedicated.EnemyOwnershipDirector.LastEnemyReclaims;
+            stickyKeeps = FactionTactics.HarmonyPatches.ZDOMan_ReleaseNearbyZDOS_StickyEnemy_Patch.LastStickyKeeps;
+            stickyReclaims = FactionTactics.HarmonyPatches.ZDOMan_ReleaseNearbyZDOS_StickyEnemy_Patch.LastStickyReclaims;
 #endif
             Plugin.Log?.LogInfo(
                 $"FactionTactics heartbeat: discovered={_lastDiscoveredCount} active={_active.Count} " +
@@ -256,7 +266,9 @@ namespace FactionTactics.Squad
                 $"registry={registry} findAll={findAll} findObjects={findObjects} " +
                 $"sceneInstances={sceneInstances} prefabZdos={prefabZdos} prefabLive={prefabLive} prefabMai={prefabMai} " +
                 $"monsterAI={monsterAi} candidates={candidates} " +
-                $"enemyOwned={enemyOwned} enemyLive={enemyLive} enemyMai={enemyMai}");
+                $"enemyOwned={enemyOwned} enemyLive={enemyLive} enemyMai={enemyMai} " +
+                $"enemyServerOwned={enemyServerOwned} enemyClientOwned={enemyClientOwned} " +
+                $"enemyReclaims={enemyReclaims} stickyKeeps={stickyKeeps} stickyReclaims={stickyReclaims}");
         }
 
         private SquadRuntimeState MatchOrCreateRuntime(SquadUnit squad)

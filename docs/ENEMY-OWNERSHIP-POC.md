@@ -28,12 +28,16 @@ From decompiled SSS `CreateDestroyObjects` / `ReleaseNearbyZDOS` patterns (local
 | Key | Default | Notes |
 |-----|---------|--------|
 | `Dedicated.EnableEnemyServerOwnership` | **true** (PoC) | Master gate; turn off if desync/CPU issues. |
+| `Dedicated.EnableStickyEnemyOwnership` | **true** (0.2.3) | ReleaseNearby Prefix — enemies stay server-owned near peers. |
 | `Dedicated.EnemyOwnershipIntervalSeconds` | `1.0` | Scan cadence. |
 | `Dedicated.EnemyOwnershipMaxCreatesPerTick` | `16` | Cap CreateObject calls per pass. |
 
 ## Heartbeat
 
-`enemyOwned=` `enemyLive=` `enemyMai=` alongside existing counters. Success signal: with peers online and enemies nearby, `enemyLive` / `enemyMai` and `updateAIHits` should rise vs 0.1.8 dedicated baselines.
+`enemyOwned=` `enemyLive=` `enemyMai=` alongside existing counters. **0.2.3:** also
+`enemyServerOwned=` / `enemyClientOwned=` / `enemyReclaims=` / `stickyKeeps=` / `stickyReclaims=`.
+Success signal: with peers online and enemies nearby, `enemyLive` / `enemyMai` and `updateAIHits`
+rise, and `enemyServerOwned>0` with `enemyClientOwned=0` (sticky holding).
 
 ## Risks (Valheim ~1.0.15 / current refs)
 
@@ -85,3 +89,39 @@ Nate lock 2026-09-19: FT is the **only** brain for squad members with `MemberInt
 - Full design: [`COMBAT-AUTHORITY-0.2.md`](./COMBAT-AUTHORITY-0.2.md).
 
 Do **not** deploy while Ungrull is online (no bounce).
+
+
+## 0.2.3 sticky server ownership (enemy-only)
+
+**Problem (proven on 0.2.2):** Thin `EnemyOwnershipDirector.SetOwner(server)` loses to vanilla
+`ZDOMan.ReleaseNearbyZDOS`. That method runs ~every 2s per peer and assigns nearby persistent ZDOs
+to the **peer UID**. Dedicated `GetReferencePosition` is garbage, so `IsInPeerActiveArea(…, server)`
+fails and vanilla steals enemies back to the client. Server logs Hold/ShieldWall while Nate sees
+vanilla chase (`BaseAI.UpdateAI` early-outs unless `ZNetView.IsOwner()`).
+
+**Fix (server-only, no client DLL):**
+
+1. **Harmony Prefix** on `ZDOMan.ReleaseNearbyZDOS` (config `EnableStickyEnemyOwnership`, default
+   true; also requires `EnableEnemyServerOwnership`):
+   - **Enemy prefabs only** (`ValheimWorldScan.IsLikelyEnemyPrefabZdo` — same allowlist as the
+     director): if near any peer → `SetOwner(ZNet.GetUID())`; never assign to clients. If not near
+     any peer → release to `0` when owned by the processed uid or server.
+   - **Non-enemies:** vanilla reclaim body unchanged (trees / buildings / ships stay client-owned).
+2. **Director tighten:** every ownership pass, if `GetOwner() != serverUid` → `SetOwner(serverUid)`;
+   throttled “reclaim fight” logs when stealing from a non-server owner.
+3. **Heartbeat:** `enemyServerOwned=` / `enemyClientOwned=` / `enemyReclaims=` /
+   `stickyKeeps=` / `stickyReclaims=` so smoke proves sticky ownership.
+
+Stolen idea from SSS `ZDOMan_ReleaseNearbyZDOS_Patch` (set owner to server near peers), but **not**
+full SSS: no `CreateDestroyObjects` replace, no zone loading, no ship/WearNTear transfer. Do **not**
+install full SSS on GPortal for this.
+
+### Smoke after parent FTP + bounce
+
+1. Confirm plugin `0.2.3` in BepInEx log + sticky line in MonsterAI Harmony banner.
+2. Join dedicated, `spawn skeleton 8` near player.
+3. Heartbeat should show `enemyServerOwned>0`, `enemyClientOwned=0` (steady), and low/zero
+   `enemyReclaims` after the first settle (if `enemyReclaims` keeps climbing every pass, sticky
+   Prefix is not winning).
+4. Visual: form-up then HoldGround line (0.2.2 behavior), not bum-rush.
+

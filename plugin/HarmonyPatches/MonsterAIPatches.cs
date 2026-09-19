@@ -15,7 +15,7 @@ namespace FactionTactics.HarmonyPatches
     /// <summary>
     /// Harmony entry + MonsterAI / BaseAI steering + discovery patches.
     /// 0.2.1: MonsterAI.UpdateAI Prefix skips vanilla when MemberIntent exists (FT sole brain).
-    /// Ownership/discovery/registry unchanged. BaseAI.MoveTo Prefix retained as belt-and-suspenders.
+    /// Ownership/discovery/registry + 0.2.3 sticky ReleaseNearby. BaseAI.MoveTo Prefix belt-and-suspenders.
     /// </summary>
     public static class MonsterAIPatches
     {
@@ -24,9 +24,10 @@ namespace FactionTactics.HarmonyPatches
 #if VALHEIM_REFS
             harmony.PatchAll(typeof(MonsterAIPatches).Assembly);
             Plugin.Log.LogInfo(
-                "MonsterAI Harmony patches LIVE (VALHEIM_REFS 0.2.2): MonsterAI.UpdateAI Prefix skip-when-intent; " +
+                "MonsterAI Harmony patches LIVE (VALHEIM_REFS 0.2.3): MonsterAI.UpdateAI Prefix skip-when-intent; " +
                 "FT drives MoveTo/StopMoving/LookAt/DoAttack; BaseAI.MoveTo Prefix guard; " +
-                "registry OnEnable/Awake/AddInstance. Smoke: line/orbit without vanilla bum-rush, still attacks.");
+                "ZDOMan.ReleaseNearbyZDOS sticky enemy ownership; " +
+                "registry OnEnable/Awake/AddInstance. Smoke: enemyServerOwned>0 enemyClientOwned=0 + line/orbit.");
 #else
             _ = harmony;
             Plugin.Log.LogInfo("VALHEIM_REFS not set — Harmony MonsterAI patches skipped (stubs mode).");
