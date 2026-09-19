@@ -40,6 +40,10 @@ namespace FactionTactics.Config
         public static ConfigEntry<int> EnemyOwnershipMaxCreatesPerTick { get; private set; } = null!;
         public static ConfigEntry<bool> EnableStickyEnemyOwnership { get; private set; } = null!;
 
+        public static ConfigEntry<bool> EnableZdoIntentSync { get; private set; } = null!;
+        public static ConfigEntry<bool> EnableOwnerCombatExecutor { get; private set; } = null!;
+
+
         // --- TEMP Black Forest ambush ambience (troubleshooting wire) ---
         public static ConfigEntry<bool> EnableAmbushAmbienceTemp { get; private set; } = null!;
         public static ConfigEntry<string> AmbushAmbienceFogEnvironment { get; private set; } = null!;
@@ -215,13 +219,10 @@ namespace FactionTactics.Config
             EnableEnemyServerOwnership = config.Bind(
                 "Dedicated",
                 "EnableEnemyServerOwnership",
-                true,
-                "PoC (0.1.9+): on dedicated/server, claim ZDO ownership for enemy prefabs (ValheimWorldScan "
-                + "KnownEnemyPrefabs) near connected peers and reflect-call ZNetScene.CreateObject when "
-                + "FindInstance is null so MonsterAI.UpdateAI can run server-side. 0.2.3 re-claims every "
-                + "pass if owner != server. Does NOT take trees/buildings/ships. Pair with "
-                + "EnableStickyEnemyOwnership to defeat vanilla ReleaseNearby client reclaim. "
-                + "Default true; disable if clients desync or CPU spikes. See docs/ENEMY-OWNERSHIP-POC.md.");
+                false,
+                "Debug PoC only (0.3.0 default FALSE): claim ZDO ownership + CreateObject for enemy prefabs near peers "
+                + "so MonsterAI can run on dedicated. Prefer hybrid ZDO intents + client ownership for combat latency. "
+                + "See docs/SERVER-COMBAT-AI-ROADMAP.md.");
 
             EnemyOwnershipIntervalSeconds = config.Bind(
                 "Dedicated",
@@ -235,14 +236,26 @@ namespace FactionTactics.Config
                 16,
                 "Max ZNetScene.CreateObject calls per ownership pass (avoids hitching).");
 
+            
+            EnableZdoIntentSync = config.Bind(
+                "Hybrid",
+                "EnableZdoIntentSync",
+                true,
+                "0.3.0: server writes MemberIntent into enemy ZDO custom fields for owning clients to read.");
+
+            EnableOwnerCombatExecutor = config.Bind(
+                "Hybrid",
+                "EnableOwnerCombatExecutor",
+                true,
+                "0.3.0: on non-dedicated peers that own an enemy ZDO, Prefix-skip vanilla UpdateAI and DriveControlledAI from intent/ZDO.");
+
             EnableStickyEnemyOwnership = config.Bind(
                 "Dedicated",
                 "EnableStickyEnemyOwnership",
-                true,
-                "0.2.3: Harmony Prefix on ZDOMan.ReleaseNearbyZDOS — enemy prefabs near any peer "
-                + "stay owned by the dedicated server UID (never released to clients). Non-enemies "
-                + "keep vanilla reclaim. Requires EnableEnemyServerOwnership. Default true. "
-                + "See docs/ENEMY-OWNERSHIP-POC.md sticky section.");
+                false,
+                "0.2.3 sticky reclaim (debug): Harmony Prefix on ZDOMan.ReleaseNearbyZDOS keeps enemy prefabs "
+                + "server-owned near peers. Non-enemies keep vanilla reclaim. Requires EnableEnemyServerOwnership. "
+                + "Default FALSE in 0.3.0 hybrid (client-owned combat). See docs/SERVER-COMBAT-AI-ROADMAP.md.");
 
             EnableAmbushAmbienceTemp = config.Bind(
                 "AmbushAmbienceTemp",

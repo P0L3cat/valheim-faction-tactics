@@ -1,3 +1,4 @@
+using FactionTactics.Config;
 using FactionTactics.Doctrine;
 using FactionTactics.Squad;
 using UnityEngine;
@@ -221,9 +222,38 @@ namespace FactionTactics.Orders
                 };
 
                 Intents[member.InstanceId] = intent;
+#if VALHEIM_REFS
+                TryReplicateIntent(member, intent);
+#endif
                 index++;
             }
         }
+
+
+#if VALHEIM_REFS
+        /// <summary>0.3.0: push intent to ZDO so owning clients can execute without server ownership.</summary>
+        private static void TryReplicateIntent(SquadMemberView member, MemberIntent intent)
+        {
+            try
+            {
+                var now = UnityEngine.Time.time;
+                if (PluginConfig.EnableZdoIntentSync?.Value == false)
+                    return;
+                if (member.NativeHandle is MonsterAI mai)
+                {
+                    IntentZdoSync.WriteFromMonsterAI(mai, intent, now);
+                    return;
+                }
+                if (member.NativeHandle is ZDO zdo)
+                    IntentZdoSync.Write(zdo, intent, now);
+            }
+            catch (System.Exception ex)
+            {
+                if (PluginConfig.DebugLogging?.Value == true)
+                    Plugin.Log?.LogDebug($"TryReplicateIntent: {ex.GetType().Name}: {ex.Message}");
+            }
+        }
+#endif
 
         public static bool TryGetIntent(long instanceId, out MemberIntent intent)
             => Intents.TryGetValue(instanceId, out intent!);
@@ -424,31 +454,5 @@ namespace FactionTactics.Orders
         private static bool Contains(string? name, string token)
             => name != null
                && name.IndexOf(token, System.StringComparison.OrdinalIgnoreCase) >= 0;
-    }
-
-    public sealed class MemberIntent
-    {
-        public string SquadId { get; set; } = "";
-        public DoctrineOrderKind OrderKind { get; set; }
-        public FormationType Formation { get; set; }
-        public StanceType Stance { get; set; }
-        public SquadRole Role { get; set; }
-        public Vector3 DesiredPosition { get; set; }
-        public long? FocusTargetId { get; set; }
-        public bool HoldGround { get; set; }
-        public bool PreferRun { get; set; }
-        /// <summary>0.2: FT may close on threat (Charge/hot assault). Does <b>not</b> run vanilla UpdateAI.</summary>
-        public bool AllowVanillaChase { get; set; }
-        /// <summary>Artillery jelly / kite: suppress melee chase into danger.</summary>
-        public bool PreferKeepRange { get; set; }
-
-        /// <summary>Siege Assault: melee/front/brute pressing structure breach.</summary>
-        public bool AssaultWallBreaker { get; set; }
-
-        /// <summary>Siege Assault: missile covering wall-breakers (FocusWallman).</summary>
-        public bool AssaultMissileCover { get; set; }
-
-        /// <summary>Quiet assault: leave vanilla structure targeting alone.</summary>
-        public bool AllowVanillaStructure { get; set; }
     }
 }

@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>FactionTactics.Client</AssemblyName>
+    <RootNamespace>FactionTactics.Client</RootNamespace>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <OutputPath>bin/$(Configuration)/</OutputPath>
+    <ValheimDir Condition="'$(ValheimDir)' == ''">$(VALHEIM_INSTALL)</ValheimDir>
+    <ValheimDir Condition="'$(ValheimDir)' == ''">/workspace/faction-tactics/refs/ValheimInstall</ValheimDir>
+    <ValheimManaged>$(ValheimDir)/valheim_Data/Managed</ValheimManaged>
+    <BepInExDir Condition="'$(BepInExDir)' == ''">$(ValheimDir)/BepInEx</BepInExDir>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="Exists('$(ValheimManaged)/assembly_valheim.dll')">
+    <DefineConstants>$(DefineConstants);VALHEIM_REFS;FT_CLIENT</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup Condition="Exists('$(ValheimManaged)/assembly_valheim.dll')">
+    <Reference Include="assembly_valheim">
+      <HintPath>$(ValheimManaged)/assembly_valheim.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="assembly_utils">
+      <HintPath>$(ValheimManaged)/assembly_utils.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(ValheimManaged)/UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(ValheimManaged)/UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="BepInEx">
+      <HintPath>$(BepInExDir)/core/BepInEx.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(BepInExDir)/core/0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- Shared intent schema + ZDO sync + enums (no server commander). -->
+  <ItemGroup>
+    <Compile Include="..\plugin\Orders\IntentZdoCodec.cs" Link="Shared\IntentZdoCodec.cs" />
+    <Compile Include="..\plugin\Orders\IntentZdoSync.cs" Link="Shared\IntentZdoSync.cs" />
+    <Compile Include="..\plugin\Orders\MemberIntent.cs" Link="Shared\MemberIntent.cs" />
+    <Compile Include="..\plugin\Orders\FormationType.cs" Link="Shared\FormationType.cs" />
+    <Compile Include="..\plugin\Orders\StanceType.cs" Link="Shared\StanceType.cs" />
+    <Compile Include="..\plugin\Doctrine\DoctrineOrderKind.cs" Link="Shared\DoctrineOrderKind.cs" />
+    <Compile Include="..\plugin\Doctrine\SquadRole.cs" Link="Shared\SquadRole.cs" />
+    <Compile Include="..\plugin\Util\FactionTacticsLog.cs" Link="Shared\FactionTacticsLog.cs" />
+    <Compile Include="..\plugin\Util\ValheimIds.cs" Link="Shared\ValheimIds.cs" />
+    <Compile Include="..\plugin\Combat\CombatDriver.cs" Link="Shared\CombatDriver.cs" />
+    <Compile Include="..\plugin\Orders\FtVersion.cs" Link="Shared\FtVersion.cs" />
+
+  </ItemGroup>
+
+  <Target Name="FailIfNoValheimRefs" BeforeTargets="CoreCompile">
+    <Error Condition="!Exists('$(ValheimManaged)/assembly_valheim.dll')"
+           Text="VALHEIM_REFS missing for client: set -p:ValheimDir=..." />
+  </Target>
+</Project>

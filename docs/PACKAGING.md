@@ -1,0 +1,22 @@
+# Packaging 0.3.0
+
+## Artifacts
+
+| File | Use |
+|------|-----|
+| `dist/FactionTactics-Server.zip` | GitHub Release / manual server install |
+| `dist/FactionTactics-Client.zip` | GitHub Release / players |
+| `dist/FactionTactics-Server-Thunderstore.zip` | Upload to Thunderstore (add icon.png first) |
+| `dist/FactionTactics-Client-Thunderstore.zip` | Upload to Thunderstore (add icon.png first) |
+| `dist/INSTALL.md` | Canonical install steps |
+| `dist/DISCORD-BLURB.md` | #modding paste (don't post unless asked) |
+| `dist/SHA256SUMS.txt` | DLL hashes |
+
+## Build
+
+```bash
+dotnet build plugin/FactionTactics.csproj -c Release
+dotnet build client/FactionTactics.Client.csproj -c Release
+```
+
+Requires `refs/ValheimInstall` (VALHEIM_REFS). Version: `FtVersion.ProductVersion` = `0.3.0` in both assemblies.

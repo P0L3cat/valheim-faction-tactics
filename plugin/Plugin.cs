@@ -10,6 +10,7 @@ using FactionTactics.Siege;
 using FactionTactics.Ambience;
 using FactionTactics.Squad;
 using FactionTactics.Dedicated;
+using FactionTactics.Util;
 using HarmonyLib;
 
 #if !VALHEIM_REFS
@@ -23,7 +24,7 @@ namespace FactionTactics
     {
         public const string PluginGuid = "com.nate.factiontactics";
         public const string PluginName = "FactionTactics";
-        public const string PluginVersion = "0.2.3";
+        public const string PluginVersion = "0.3.0";
 
         internal static Plugin Instance { get; private set; } = null!;
         internal static ManualLogSource Log { get; private set; } = null!;
@@ -39,6 +40,7 @@ namespace FactionTactics
         {
             Instance = this;
             Log = Logger;
+            FactionTacticsLog.DebugSink = msg => Log.LogDebug(msg);
 
             PluginConfig.Bind(Config);
 
@@ -68,7 +70,7 @@ namespace FactionTactics
             {
                 _harmony = new Harmony(PluginGuid);
                 MonsterAIPatches.Apply(_harmony);
-                Log.LogInfo($"{PluginName} {PluginVersion} loaded (combat authority + sticky enemy ownership + doctrine packs + Siege Assault). Tick={PluginConfig.TickIntervalSeconds.Value}s");
+                Log.LogInfo($"{PluginName} {PluginVersion} loaded (0.3.0 hybrid commander: ZDO intents; sticky/ownership default OFF; client executor for combat). Tick={PluginConfig.TickIntervalSeconds.Value}s");
             }
             else
             {

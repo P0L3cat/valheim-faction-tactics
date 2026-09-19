@@ -1,38 +1,48 @@
-# Server-side combat AI roadmap (post 0.2.3 live pause)
+# Server combat AI roadmap — 0.3.0 hybrid commander / executor
 
-**Date:** 2026-09-19 CT  
-**Live status:** GPortal FT DLL disabled (`FactionTactics.dll.disabled-rollback`); sticky + `EnableEnemyServerOwnership` false. Clean bounce 2026-09-19 ~17:20 CT — FT not loading.
+**Date:** 2026-09-19 (America/Chicago)  
+**Status:** 0.3.0 implemented offline — **no GPortal deploy** from this change.
 
-## Proven on dedicated (keep)
+## Pivot (Nate)
 
-| Layer | Evidence |
-|-------|----------|
-| Enemy ZDO claim + CreateObject | `enemyMai>0`, `updateAIHits` climb |
-| Discovery → squads | `roman:8` / `ambush:8`, `discovered=1 active=1` |
-| Sole-brain Prefix | `orders=[Hold…]`, `baseAIUpdateHits≈0` while `updateAIHits` rises |
-| Sticky ReleaseNearby | `enemyServerOwned>0`, `enemyClientOwned=0`, reclaim logs |
-| Form-up before Hold (0.2.2) | Code committed; not fully proven under sticky |
+IronGate client-side combat = smooth fights. Full sticky server ownership (0.2.3) → statues / unhittable.  
+**Do not** optimize for server-owned `UpdateAI` as the primary combat path.
 
-## Failed live (0.2.3 sticky)
+## Architecture (0.3.0)
 
-Nate: mobs **immobile**, **don’t see player**, **can’t be attacked**. Sticky flipped authority correctly but thin ownership ≠ full SSS simulation.
+| Role | Assembly | Responsibility |
+|------|----------|----------------|
+| **Commander** | `FactionTactics.dll` (server) | Discovery, squads, doctrines, FSM, siege hooks. Writes `MemberIntent` to enemy **ZDO custom fields**. Sticky/ownership **default false**. Does **not** sole-brain combat on dedicated. |
+| **Executor** | `FactionTactics.Client.dll` (players) | Reads ZDO intents. `Drive` MoveTo/Hold/LookAt/DoAttack only when **local IsOwner**. Prefix-skips vanilla chase when intent present. Physics + hits stay client-owned. |
+| **Shared** | Linked sources | `IntentZdoCodec` schema v1, `IntentZdoSync`, `CombatDriver`, `FtVersion` (product **0.3.0**). Schema mismatch → loud log + ignore intents. |
 
-Vanilla constraints:
+### Install (Ungrull-friendly)
 
-- `BaseAI.UpdateAI` / `Character.CustomFixedUpdate` gate on `ZNetView.IsOwner()` — client must not own FT enemies.
-- Server must own **and** produce visible motion + damageable Characters (client hits via RPC to owner).
-- `MonsterAI.UpdateTarget` uses `Player.IsPlayerInRange` / `FindEnemy` — must work with peer players (`Player.m_localPlayer` is null on dedicated).
+- `dist/FactionTactics-Server.zip` + `dist/FactionTactics-Client.zip` (+ Thunderstore variants).
+- One-page `INSTALL.md` inside each zip.
+- Discord blurb: `dist/DISCORD-BLURB.md` (do not post unless asked).
 
-## 0.3.x goals (server-only, no client FT)
+### Config defaults (safe)
 
-1. **Sense** — peer-player targeting on dedicated; heartbeat `hasTarget` / hear / see.
-2. **Move** — form-up MoveTo then Hold; prove ZDO/transform sync so clients see motion.
-3. **Fight** — `DoAttack` with live target; prove client→server damage on server-owned Characters.
-4. **Sticky** — keep enemy-only ReleaseNearby; default **false** until sense+move+hit smoke green.
-5. **Config** — sticky off by default; ownership PoC for capture tests only.
+- `EnableEnemyServerOwnership` = **false**
+- `EnableStickyEnemyOwnership` = **false**
+- `EnableZdoIntentSync` = **true**
+- `EnableOwnerCombatExecutor` = **true** (client / listen host)
+
+Sticky/ownership code remains behind those flags for debug capture only.
+
+## Proven earlier (keep)
+
+- Enemy ZDO claim + CreateObject (when flags on)
+- Discovery → squads; Prefix sole-brain when owner
+- Form-up-before-Hold (0.2.2)
+
+## Failed live (0.2.3 sticky) — lesson
+
+Sticky flipped `enemyClientOwned=0` but mobs immobile / unaware / unhittable. Thin ownership ≠ full SSS simulation. Hybrid keeps IsOwner on clients.
 
 ## Non-goals
 
-- Client-side Faction Tactics DLL (Nate lock).
-- Full SSS on GPortal unless ordered.
-- Raising spawn/raid rates.
+- GPortal FTP/bounce from this work
+- Full SSS install
+- Raising spawn/raid rates

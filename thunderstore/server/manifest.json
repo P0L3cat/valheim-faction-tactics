@@ -1,0 +1,9 @@
+{
+  "name": "FactionTactics_Server",
+  "version_number": "0.3.0",
+  "website_url": "https://github.com/P0L3cat/valheim-faction-tactics",
+  "description": "Server commander: doctrines/squads write ZDO intents. Install FactionTactics_Client on players. Sticky ownership OFF by default.",
+  "dependencies": [
+    "denikson-BepInExPack_Valheim-5.4.2202"
+  ]
+}

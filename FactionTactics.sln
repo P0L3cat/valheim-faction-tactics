@@ -9,6 +9,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{7DC64D31
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FactionTactics.Tests", "tests\FactionTactics.Tests\FactionTactics.Tests.csproj", "{0ADBE4BD-16AC-47FA-814C-F960C81A14FD}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FactionTactics.Client", "client\FactionTactics.Client.csproj", "{08B9F43B-EDD3-4286-B78F-F28455900C9B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -26,6 +28,10 @@ Global
 		{0ADBE4BD-16AC-47FA-814C-F960C81A14FD}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{0ADBE4BD-16AC-47FA-814C-F960C81A14FD}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{0ADBE4BD-16AC-47FA-814C-F960C81A14FD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{08B9F43B-EDD3-4286-B78F-F28455900C9B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{08B9F43B-EDD3-4286-B78F-F28455900C9B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{08B9F43B-EDD3-4286-B78F-F28455900C9B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{08B9F43B-EDD3-4286-B78F-F28455900C9B}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{0ADBE4BD-16AC-47FA-814C-F960C81A14FD} = {7DC64D31-8D94-4FCD-A9F3-2C8289A370A5}

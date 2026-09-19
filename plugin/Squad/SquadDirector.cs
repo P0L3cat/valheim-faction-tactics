@@ -259,7 +259,19 @@ namespace FactionTactics.Squad
             stickyKeeps = FactionTactics.HarmonyPatches.ZDOMan_ReleaseNearbyZDOS_StickyEnemy_Patch.LastStickyKeeps;
             stickyReclaims = FactionTactics.HarmonyPatches.ZDOMan_ReleaseNearbyZDOS_StickyEnemy_Patch.LastStickyReclaims;
 #endif
-            Plugin.Log?.LogInfo(
+                        var zdoWrites = 0L;
+            var zdoReads = 0L;
+            var zdoStale = 0L;
+            var schemaMismatch = 0L;
+            var ownerDrives = 0L;
+#if VALHEIM_REFS
+            zdoWrites = FactionTactics.Orders.IntentZdoSync.Writes;
+            zdoReads = FactionTactics.Orders.IntentZdoSync.ReadsOk;
+            zdoStale = FactionTactics.Orders.IntentZdoSync.ReadsStale;
+            schemaMismatch = FactionTactics.Orders.IntentZdoSync.SchemaMismatches;
+            ownerDrives = FactionTactics.HarmonyPatches.MonsterAI_UpdateAI_Patch.OwnerDriveCount;
+#endif
+Plugin.Log?.LogInfo(
                 $"FactionTactics heartbeat: discovered={_lastDiscoveredCount} active={_active.Count} " +
                 $"squads={_active.Count} orders=[{topOrders}] " +
                 $"formations=[{topForms}] baseAIUpdateHits={baseAIUpdateHits} updateAIHits={updateAIHits} " +
@@ -268,7 +280,8 @@ namespace FactionTactics.Squad
                 $"monsterAI={monsterAi} candidates={candidates} " +
                 $"enemyOwned={enemyOwned} enemyLive={enemyLive} enemyMai={enemyMai} " +
                 $"enemyServerOwned={enemyServerOwned} enemyClientOwned={enemyClientOwned} " +
-                $"enemyReclaims={enemyReclaims} stickyKeeps={stickyKeeps} stickyReclaims={stickyReclaims}");
+                $"enemyReclaims={enemyReclaims} stickyKeeps={stickyKeeps} stickyReclaims={stickyReclaims}" +
+                $" zdoWrites={zdoWrites} zdoReads={zdoReads} zdoStale={zdoStale} schemaMismatch={schemaMismatch} ownerDrives={ownerDrives}");
         }
 
         private SquadRuntimeState MatchOrCreateRuntime(SquadUnit squad)

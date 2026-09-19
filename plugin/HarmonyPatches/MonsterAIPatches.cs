@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using FactionTactics.Combat;
 using FactionTactics.Config;
 using FactionTactics.Doctrine;
 using FactionTactics.Orders;
@@ -24,7 +25,7 @@ namespace FactionTactics.HarmonyPatches
 #if VALHEIM_REFS
             harmony.PatchAll(typeof(MonsterAIPatches).Assembly);
             Plugin.Log.LogInfo(
-                "MonsterAI Harmony patches LIVE (VALHEIM_REFS 0.2.3): MonsterAI.UpdateAI Prefix skip-when-intent; " +
+                "MonsterAI Harmony patches LIVE (VALHEIM_REFS 0.3.0): MonsterAI.UpdateAI Prefix skip-when-intent; " +
                 "FT drives MoveTo/StopMoving/LookAt/DoAttack; BaseAI.MoveTo Prefix guard; " +
                 "ZDOMan.ReleaseNearbyZDOS sticky enemy ownership; " +
                 "registry OnEnable/Awake/AddInstance. Smoke: enemyServerOwned>0 enemyClientOwned=0 + line/orbit.");
@@ -53,7 +54,14 @@ namespace FactionTactics.HarmonyPatches
         /// </summary>
         public static long UpdateAIHitCount { get; private set; }
 
-        public static void ResetUpdateAIHitCount() => UpdateAIHitCount = 0;
+        /// <summary>0.3.0: DriveControlledAI frames on ZDO-owning peer.</summary>
+        public static long OwnerDriveCount { get; private set; }
+
+        public static void ResetUpdateAIHitCount()
+        {
+            UpdateAIHitCount = 0;
+            OwnerDriveCount = 0;
+        }
 
         [HarmonyPrefix]
         [HarmonyPatch(nameof(MonsterAI.UpdateAI))]
@@ -62,11 +70,24 @@ namespace FactionTactics.HarmonyPatches
             UpdateAIHitCount++;
             MonsterAIRegistry.Register(__instance);
 
+            // 0.3.0 hybrid: dedicated server is commander-only (ZDO intents). Do not sole-brain
+            // combat here — owning clients run DriveControlledAI for latency-friendly hits/motion.
+            if (ZNet.instance != null && ZNet.instance.IsDedicated())
+                return true;
+
             if (!TryResolveIntent(__instance, out var intent))
                 return true; // vanilla brain
 
-            DriveControlledAI(__instance, intent, dt);
-            return false; // FT sole brain — skip vanilla UpdateAI
+            if (PluginConfig.EnableOwnerCombatExecutor?.Value == false)
+                return true;
+
+            // Only the ZDO owner simulates Character physics / attacks.
+            if (!IntentZdoSync.IsNetOwner(__instance))
+                return true;
+
+            CombatDriver.Drive(__instance, intent, dt);
+            OwnerDriveCount++;
+            return false; // FT sole brain on owning peer — skip vanilla UpdateAI
         }
 
         /// <summary>
@@ -264,9 +285,15 @@ namespace FactionTactics.HarmonyPatches
             if (ch == null)
                 return false;
             var id = ValheimIds.FromCharacter(ch);
-            if (id == 0)
-                return false;
-            return OrderApplicator.TryGetIntent(id, out intent);
+            if (id != 0 && OrderApplicator.TryGetIntent(id, out intent))
+                return true;
+
+            // 0.3.0: owning client reads commander intent from ZDO customs.
+            if (IntentZdoSync.TryReadFromMonsterAI(ai, UnityEngine.Time.time, out intent))
+                return true;
+
+            intent = null!;
+            return false;
         }
 
         private static bool CallMoveTo(BaseAI ai, float dt, Vector3 point, float dist, bool run)

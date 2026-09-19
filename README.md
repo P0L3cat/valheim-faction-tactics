@@ -1,5 +1,17 @@
 # Faction Tactics
 
+**0.3.0 hybrid:** server commander (`FactionTactics.dll`) + client executor (`FactionTactics.Client.dll`).
+
+## Quick install (0.3.0)
+
+1. **Server:** unzip `dist/FactionTactics-Server.zip` → `BepInEx/plugins/FactionTactics.dll`
+2. **Players:** unzip `dist/FactionTactics-Client.zip` → `BepInEx/plugins/FactionTactics.Client.dll`
+3. Same version on both sides. Details: `dist/INSTALL.md`.
+
+Thunderstore-ready trees: `thunderstore/server`, `thunderstore/client` (add `icon.png` before upload).
+
+---
+
 Valheim **BepInEx 5 + HarmonyX** plugin: doctrine packs + squad FSM (Route 1), with Route 2 scorer hooks and Route 3 `ICommander` / `SquadOrder` seams.
 
 **Implemented packs:** Roman, Ambush (+ Troll fortress), VikingShieldWall, Steppe, InsectSiege, CharredLegion, PackHunters, ArtilleryJelly.  
