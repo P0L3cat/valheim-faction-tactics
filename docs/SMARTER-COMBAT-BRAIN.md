@@ -606,3 +606,58 @@ Existing knobs (keep): doctrine enables, radii, siege, hybrid/RPC, DeathRush scr
 ---
 
 *Pipeline locked (1.0.4). Brain next. Design-only — implement Phase A when ready; no deploy from this doc.*
+
+---
+
+## Design lock (Nate review, 2026-09-19 CT)
+
+**Verdict:** Solid. Layers stay clean. **Do not code the fancy FSM until swing gate + slot lock land.**
+
+### What works (keep)
+- Commander owns *which* action; owning client owns *when* a swing/step happens (matches 1.0.4 RPC).
+- Coarse intents keep the same shape; meaning rides `HoldGround` / `PreferKeepRange` / `AllowVanillaChase`.
+- Per-doctrine: theory of victory, maneuvers, if-ladder, anti-patterns.
+- Slot lock + dwell + Charge max time target blender Hold and “quiet alerted grid.”
+- Phases A–D are shippable; A is small and measurable.
+
+### Phase A must-land (before any scored FSM)
+1. **Swing gate** — `DoAttack` only if: target exists, in weapon band, cooldown done, not mid-anim/recovery. Same for ProtectMissiles Front. Per-instance `nextSwingTime` + `slotIndex * SwingStaggerMs`. Without this every HoldFacing doctrine is a blender.
+2. **Slot lock** — Keep `instanceId → slotIndex` until order change, `FormationReshuffleSeconds` (~3s), or casualty delta (~0.25). **Leave holes.** Do not rebuild equal-spacing on every death.
+3. **Charge / Advance hygiene** — FormUp to slots first. Charge is short, then re-eval (**DeathRush excepted**). After Charge, Viking/Charred get one Peel/reform beat.
+4. **Optional discovery burst** — One short tick window on spawn / near-player ZDO spike; then back to 0.75s.
+
+Ship those four; current doctrines will already feel better.
+
+### Risks (do not “fix” by growing ladders)
+- Shared Charge/Hold/Protect across Roman/Ambush/Viking/Charred → flip without min dwell + hysteresis. **Phase B** scored transitions; do not grow if-ladders first.
+- Flankers must not inherit Front `HoldGround` (applicator invariant; keep in tests).
+- Range bands are magic (14/18 Roman, 8/18 Ambush, 10–22 jelly) — expose knobs; playtest one biome at a time.
+- Siege quiet must not `AllowVanillaChase` into walls; Roman stays out of Assault — same invariant tests.
+- DeathRush: never shared “broken → Peel”; gate Peel on doctrine.
+
+### Doctrine notes (short)
+- **Roman:** PressContact + ThrowVolley in wall band = identity; Charge last resort.
+- **Ambush:** Force Kite after every FlashCharge; never HoldGround on flankers.
+- **Viking / Charred:** Reform beat or Charge↔Advance ping-pong.
+- **Steppe / Pack:** Charge opportunistic only; Orbit dies if slot lock fails.
+- **Jelly:** Never Charge; never Front lattice; comfort annulus is the brain.
+- **Insect:** Dvergr soften path must beat Charge in first-match ladders.
+- **DeathRush:** Hard override; protect from shared Peel helpers.
+
+### Open questions — answered before Phase B
+| Q | Answer (Nate lock) |
+|---|-------------------|
+| Isolate / FlankOpportunity formula? | Cheap: **one player in contact band**, OR **players split > `FlankSplitMeters` (default 12)** → FlashCharge/FlankOpportunity true. |
+| FormUp when slots empty? | **Advance under the hood** (MoveTo slots, no HoldGround) until within `FrontHoldSlotDist`; then HoldFacing. |
+| Missile LOS? | **Skip until Phase C.** Owner may face/shoot without LOS gate in A/B. |
+| Listen-host vs dedicated swing gate? | **Same `CombatDriver` path** for the gate on every owning peer (client or listen-host). |
+
+### Phase A checklist
+- [ ] Gate `TryDriveAttack` on Hold / Protect Front (+ cooldown + stagger)
+- [ ] Slot lock + holes (no per-death lattice rebuild)
+- [ ] Charge max seconds + post-Charge Peel on Viking/Charred (not DeathRush)
+- [ ] Debug counters: `swings`, `holdBlocks`, `slotLocks`
+- [ ] Optional discovery burst
+- [ ] Video: Skeleton wall, Greydwarf orbit, Draugr crypt, Greyling rush
+
+**Phase B only after those look right on video.**
