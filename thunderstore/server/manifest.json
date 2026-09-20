@@ -1,8 +1,8 @@
 {
   "name": "FactionTactics_Server",
-  "version_number": "1.0.3",
+  "version_number": "1.0.4",
   "website_url": "https://github.com/P0L3cat/valheim-faction-tactics",
-  "description": "Server commander for Faction Tactics 1.0.3: doctrines + RPC intent broadcast (ZDO fallback). Pair with Client 1.0.3. Behavior-only (no extra spawns).",
+  "description": "Server commander for Faction Tactics 1.0.4: doctrines + RPC intent broadcast (ZDO fallback). Pair with Client 1.0.4. Behavior-only (no extra spawns).",
   "dependencies": [
     "denikson-BepInExPack_Valheim-5.4.2202"
   ]
