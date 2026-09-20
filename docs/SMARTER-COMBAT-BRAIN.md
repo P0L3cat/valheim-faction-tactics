@@ -644,8 +644,8 @@ Ship those four; current doctrines will already feel better.
 - **Insect:** Dvergr soften path must beat Charge in first-match ladders.
 - **DeathRush:** Hard override; protect from shared Peel helpers.
 
-### Open questions — answered before Phase B
-| Q | Answer (Nate lock) |
+### Open questions — **locked by Nate 2026-09-19** (before Phase B)
+| Q | Answer (confirmed) |
 |---|-------------------|
 | Isolate / FlankOpportunity formula? | Cheap: **one player in contact band**, OR **players split > `FlankSplitMeters` (default 12)** → FlashCharge/FlankOpportunity true. |
 | FormUp when slots empty? | **Advance under the hood** (MoveTo slots, no HoldGround) until within `FrontHoldSlotDist`; then HoldFacing. |
@@ -661,3 +661,5 @@ Ship those four; current doctrines will already feel better.
 - [ ] Video: Skeleton wall, Greydwarf orbit, Draugr crypt, Greyling rush
 
 **Phase B only after those look right on video.**
+
+**Phase A implementation authorized** after OQ lock (2026-09-19). No scored FSM until A videos look right.
