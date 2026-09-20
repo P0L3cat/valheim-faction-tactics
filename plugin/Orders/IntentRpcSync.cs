@@ -8,8 +8,12 @@ using UnityEngine;
 namespace FactionTactics.Orders
 {
     /// <summary>
-    /// Primary hybrid transport (1.0.3): server broadcasts <see cref="MemberIntent"/> batches
+    /// Primary hybrid transport (1.0.4): server broadcasts <see cref="MemberIntent"/> batches
     /// via ZRoutedRpc + ZPackage. Clients cache by packed ZDOID; combat executor reads cache first.
+    /// <para>
+    /// 1.0.4: dedicated unreliable often fails <c>Everybody</c> delivery — FlushBroadcast iterates
+    /// <c>ZNet.GetPeers()</c> and invokes per <c>peer.m_uid</c> (cloned ZPackage), with Everybody backup.
+    /// </para>
     /// <para>
     /// ZDO custom fields (<see cref="IntentZdoSync"/>) remain an optional/debug fallback —
     /// <c>ZDO.Set</c> from a non-owner peer (dedicated commander) is unreliable and often never
@@ -28,12 +32,19 @@ namespace FactionTactics.Orders
 
         public static long RpcIntentsSent { get; private set; }
         public static long RpcBatchesSent { get; private set; }
+        public static long RpcPeerInvokes { get; private set; }
         public static long RpcIntentsReceived { get; private set; }
+        public static long RpcPacketsReceived { get; private set; }
         public static long RpcCacheHits { get; private set; }
         public static long RpcSchemaMismatches { get; private set; }
 
+        /// <summary>True after a successful Register against the current ZRoutedRpc.instance.</summary>
+        public static bool IsRegistered => _registered;
+
         private static bool _registered;
+        private static object? _registeredOn; // ZRoutedRpc.instance identity
         private static bool _loggedFirstApply;
+        private static bool _loggedFirstPacket;
         private static bool _loggedRegister;
 
         private struct PendingEntry
@@ -50,8 +61,10 @@ namespace FactionTactics.Orders
 
         public static void ResetCounters()
         {
-            RpcIntentsSent = RpcBatchesSent = RpcIntentsReceived = RpcCacheHits = RpcSchemaMismatches = 0;
+            RpcIntentsSent = RpcBatchesSent = RpcPeerInvokes = 0;
+            RpcIntentsReceived = RpcPacketsReceived = RpcCacheHits = RpcSchemaMismatches = 0;
             _loggedFirstApply = false;
+            _loggedFirstPacket = false;
             Pending.Clear();
             Cache.Clear();
         }
@@ -67,18 +80,22 @@ namespace FactionTactics.Orders
 #if VALHEIM_REFS
         /// <summary>
         /// Register the routed RPC handler. Safe to call repeatedly; no-ops until
-        /// <c>ZRoutedRpc.instance</c> exists.
+        /// <c>ZRoutedRpc.instance</c> exists. Re-registers if the instance is replaced
+        /// (disconnect / rejoin).
         /// </summary>
         public static void EnsureRegistered()
         {
-            if (_registered)
-                return;
             try
             {
-                if (ZRoutedRpc.instance == null)
+                var inst = ZRoutedRpc.instance;
+                if (inst == null)
                     return;
-                ZRoutedRpc.instance.Register(RpcName, new Action<long, ZPackage>(OnRouted));
+                if (_registered && ReferenceEquals(_registeredOn, inst))
+                    return;
+
+                inst.Register(RpcName, new Action<long, ZPackage>(OnRouted));
                 _registered = true;
+                _registeredOn = inst;
                 if (!_loggedRegister)
                 {
                     _loggedRegister = true;
@@ -89,6 +106,10 @@ namespace FactionTactics.Orders
                     }
                     catch { /* headless ok */ }
                 }
+                else
+                {
+                    FactionTacticsLog.Debug($"[FT] IntentRpcSync re-registered RPC '{RpcName}' (ZRoutedRpc instance changed).");
+                }
             }
             catch (Exception ex)
             {
@@ -97,8 +118,9 @@ namespace FactionTactics.Orders
         }
 
         /// <summary>
-        /// Pack pending intents into one ZPackage and broadcast to all peers.
-        /// Call once per commander tick (throttle).
+        /// Pack pending intents into one ZPackage and deliver to all connected peers.
+        /// Dedicated: prefer per-peer <see cref="ZRoutedRpc.InvokeRoutedRPC(long,string,object[])"/>;
+        /// <c>Everybody</c> alone is unreliable from dedicated. Call once per commander tick.
         /// </summary>
         public static void FlushBroadcast()
         {
@@ -126,8 +148,57 @@ namespace FactionTactics.Orders
                     RpcIntentsSent++;
                 }
 
-                ZRoutedRpc.instance.InvokeRoutedRPC(ZRoutedRpc.Everybody, RpcName, new object[] { pkg });
+                // Snapshot bytes once; clone per invoke so buffer/pos is not consumed across peers.
+                var bytes = pkg.GetArray();
+                var peerInvokes = 0;
+                long selfUid = 0;
+                try { selfUid = ZNet.GetUID(); } catch { /* ok */ }
+
+                try
+                {
+                    if (ZNet.instance != null)
+                    {
+                        var peers = ZNet.instance.GetPeers();
+                        if (peers != null)
+                        {
+                            for (var i = 0; i < peers.Count; i++)
+                            {
+                                var peer = peers[i];
+                                if (peer == null || peer.m_uid == 0)
+                                    continue;
+                                if (selfUid != 0 && peer.m_uid == selfUid)
+                                    continue;
+                                // params object[] — pass ZPackage directly, not new object[] { pkg }
+                                ZRoutedRpc.instance.InvokeRoutedRPC(peer.m_uid, RpcName, new ZPackage(bytes));
+                                peerInvokes++;
+                                RpcPeerInvokes++;
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    FactionTacticsLog.Debug(
+                        $"IntentRpcSync.FlushBroadcast peer iterate: {ex.GetType().Name}: {ex.Message}");
+                }
+
+                // Backup: Everybody (listen-host / when peer list empty). Clone again.
+                try
+                {
+                    ZRoutedRpc.instance.InvokeRoutedRPC(ZRoutedRpc.Everybody, RpcName, new ZPackage(bytes));
+                }
+                catch (Exception ex)
+                {
+                    FactionTacticsLog.Debug(
+                        $"IntentRpcSync.FlushBroadcast Everybody: {ex.GetType().Name}: {ex.Message}");
+                }
+
                 RpcBatchesSent++;
+                if (peerInvokes == 0)
+                {
+                    FactionTacticsLog.Debug(
+                        $"[FT] IntentRpcSync FlushBroadcast: no peers targeted; Everybody backup only (intents={snap.Count}).");
+                }
             }
             catch (Exception ex)
             {
@@ -137,20 +208,26 @@ namespace FactionTactics.Orders
 
         private static void OnRouted(long senderPeerId, ZPackage pkg)
         {
+            RpcPacketsReceived++;
             if (pkg == null)
+            {
+                LogFirstPacket(senderPeerId, count: -1, note: "null pkg");
                 return;
+            }
             try
             {
                 var ver = pkg.ReadInt();
                 if (ver != IntentZdoCodec.SchemaVersion)
                 {
                     RpcSchemaMismatches++;
+                    LogFirstPacket(senderPeerId, count: -1, note: $"schema mismatch rpc={ver}");
                     FactionTacticsLog.Debug(
                         $"[FT] IntentRpcSync schema mismatch rpc={ver} local={IntentZdoCodec.SchemaVersion}");
                     return;
                 }
 
                 var count = pkg.ReadInt();
+                LogFirstPacket(senderPeerId, count, note: null);
                 if (count < 0 || count > 4096)
                     return;
 
@@ -172,6 +249,27 @@ namespace FactionTactics.Orders
             {
                 FactionTacticsLog.Debug($"IntentRpcSync.OnRouted failed: {ex.GetType().Name}: {ex.Message}");
             }
+        }
+
+        private static void LogFirstPacket(long senderPeerId, int count, string? note)
+        {
+            if (_loggedFirstPacket)
+                return;
+            _loggedFirstPacket = true;
+            var extra = string.IsNullOrEmpty(note) ? "" : $" {note}";
+            var msg =
+                $"[FactionTactics] RPC OnRouted first packet sender={senderPeerId} count={count} packets={RpcPacketsReceived}{extra}";
+            try
+            {
+                Debug.Log(msg);
+            }
+            catch { /* headless */ }
+            try
+            {
+                // BepInEx Info when available (client / server plugin log sinks via Unity + FactionTacticsLog).
+                FactionTacticsLog.Debug(msg);
+            }
+            catch { /* ok */ }
         }
 
         private static void WriteOne(ZPackage pkg, long id, MemberIntent intent, float writtenAt)

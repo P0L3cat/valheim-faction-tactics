@@ -1,4 +1,4 @@
-# Faction Tactics console knobs (1.0.3)
+# Faction Tactics console knobs (1.0.4)
 
 Admin / dedicated / listen-host **Terminal** commands to tweak live `PluginConfig` without redeploying DLLs.
 

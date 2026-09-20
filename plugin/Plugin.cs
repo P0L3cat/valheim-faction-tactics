@@ -25,7 +25,7 @@ namespace FactionTactics
     {
         public const string PluginGuid = "com.nate.factiontactics";
         public const string PluginName = "FactionTactics";
-        public const string PluginVersion = "1.0.3";
+        public const string PluginVersion = "1.0.4";
 
         internal static Plugin Instance { get; private set; } = null!;
         internal static ManualLogSource Log { get; private set; } = null!;
@@ -78,7 +78,7 @@ namespace FactionTactics
             {
                 _harmony = new Harmony(PluginGuid);
                 MonsterAIPatches.Apply(_harmony);
-                Log.LogInfo($"{PluginName} {PluginVersion} loaded (1.0.3 hybrid commander: ZDO-only discovery + RPC intent broadcast; ZDO write optional/debug; sticky/ownership default OFF). Tick={PluginConfig.TickIntervalSeconds.Value}s");
+                Log.LogInfo($"{PluginName} {PluginVersion} loaded (1.0.4 hybrid commander: ZDO-only discovery + RPC intent broadcast; ZDO write optional/debug; sticky/ownership default OFF). Tick={PluginConfig.TickIntervalSeconds.Value}s");
             }
             else
             {

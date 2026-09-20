@@ -1,4 +1,4 @@
-<!-- 1.0.3: RPC is primary hybrid intent transport; ZDO.Set from non-owner is unreliable. -->
+<!-- 1.0.4: peer-targeted ZRoutedRpc + register-after-join; ZDO.Set from non-owner still unreliable. -->
 # Faction Tactics — architecture lock (2026-09-18)
 
 ## Product decisions

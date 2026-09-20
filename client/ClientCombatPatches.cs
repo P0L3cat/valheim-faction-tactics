@@ -8,7 +8,7 @@ using UnityEngine;
 namespace FactionTactics.Client
 {
     /// <summary>
-    /// Owning-client executor (1.0.3): prefer RPC intent cache, then ZDO fallback.
+    /// Owning-client executor (1.0.4): prefer RPC intent cache, then ZDO fallback.
     /// Drive combat while keeping local IsOwner (physics + hits stay low-latency).
     /// </summary>
     [HarmonyPatch(typeof(MonsterAI))]
@@ -81,7 +81,7 @@ namespace FactionTactics.Client
         }
     }
 
-    /// <summary>Register FT_MemberIntents when ZNet/ZRoutedRpc comes up.</summary>
+    /// <summary>Register FT_MemberIntents when ZNet/ZRoutedRpc comes up (1.0.4: also join/update).</summary>
     [HarmonyPatch(typeof(ZNet), "Awake")]
     public static class ClientZNet_Awake_RegisterIntentRpc_Patch
     {
@@ -89,6 +89,38 @@ namespace FactionTactics.Client
         public static void Postfix()
         {
             IntentRpcSync.EnsureRegistered();
+        }
+    }
+
+    [HarmonyPatch(typeof(ZNet), "OnNewConnection")]
+    public static class ClientZNet_OnNewConnection_RegisterIntentRpc_Patch
+    {
+        [HarmonyPostfix]
+        public static void Postfix()
+        {
+            IntentRpcSync.EnsureRegistered();
+        }
+    }
+
+    [HarmonyPatch(typeof(ZNet), "Update")]
+    public static class ClientZNet_Update_RegisterIntentRpc_Patch
+    {
+        [HarmonyPostfix]
+        public static void Postfix()
+        {
+            if (!IntentRpcSync.IsRegistered)
+                IntentRpcSync.EnsureRegistered();
+        }
+    }
+
+    [HarmonyPatch(typeof(Game), "Update")]
+    public static class ClientGame_Update_RegisterIntentRpc_Patch
+    {
+        [HarmonyPostfix]
+        public static void Postfix()
+        {
+            if (!IntentRpcSync.IsRegistered)
+                IntentRpcSync.EnsureRegistered();
         }
     }
 }

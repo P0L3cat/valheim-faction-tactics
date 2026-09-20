@@ -12,6 +12,14 @@ Dedicated with sticky/ownership **OFF** often has `monsterAI=0` → no squads �
 
 
 
+
+
+## 1.0.4 fix (peer-targeted RPC + register after join)
+
+**Symptom (1.0.3 live):** server `rpcIntentsSent`/`rpcBatchesSent` climbing; client registers `FT_MemberIntents` but never logs first RPC apply (`OnRouted` not running). `ownerDrives=0`.
+
+**Fix:** `FlushBroadcast` iterates `ZNet.GetPeers()` and `InvokeRoutedRPC(peer.m_uid, RpcName, clonedPkg)` (params ZPackage, not nested `object[]`), plus Everybody backup. Client/server register on ZNet.Awake, OnNewConnection, and once-until-registered Game/ZNet.Update. `OnRouted` logs first packet at Info (even count=0); `rpcPkts` / `rpcPeerInvokes` counters.
+
 ## 1.0.3 fix (RPC primary hybrid transport)
 
 **Root cause (1.0.1–1.0.3):** Dedicated commander called `ZDO.Set(ft_iv,…)` without owning the ZDO. Owning clients never saw those fields → `Intent schema mismatch (zdo=0 local=2)` and skeletons ignored Hold/ShieldWall.
