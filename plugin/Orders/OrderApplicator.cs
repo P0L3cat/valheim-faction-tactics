@@ -22,7 +22,7 @@ namespace FactionTactics.Orders
         public static readonly System.Collections.Concurrent.ConcurrentDictionary<long, MemberIntent> Intents
             = new System.Collections.Concurrent.ConcurrentDictionary<long, MemberIntent>();
 
-        public void Apply(SquadUnit squad, SquadOrder order)
+        public void Apply(SquadUnit squad, SquadOrder order, Squad.SquadRuntimeState? runtime = null)
         {
             var centroid = ComputeCentroid(squad);
             var doctrineId = squad.Doctrine?.Id ?? "";
@@ -31,13 +31,28 @@ namespace FactionTactics.Orders
             var roman = string.Equals(doctrineId, "roman", System.StringComparison.OrdinalIgnoreCase);
             var ambush = string.Equals(doctrineId, "ambush", System.StringComparison.OrdinalIgnoreCase);
             var deathRush = string.Equals(doctrineId, "death-rush", System.StringComparison.OrdinalIgnoreCase);
-            var index = 0;
-            var count = squad.Members.Count;
+
+            // Phase A slot lock: stable indices + holes for dead (no per-death equal-spacing rebuild).
+            var casualty = squad.LastCasualtyRatio;
+            int capacity;
+            if (runtime != null)
+            {
+                capacity = FormationSlotLock.EnsureSlots(runtime, squad, order, casualty);
+            }
+            else
+            {
+                // Offline / tests without runtime: dense living indices.
+                capacity = 0;
+                foreach (var m in squad.Members)
+                    if (m.IsAlive) capacity++;
+                capacity = System.Math.Max(1, capacity);
+            }
 
             // Threat-facing basis for ShieldWall / Line (centroid → threat / nearest player).
             var threatPos = TryGetSquadThreatPosition(squad, centroid);
             BuildFacingBasis(centroid, threatPos, out var right, out var forward);
 
+            var fallbackIndex = 0;
             foreach (var member in squad.Members)
             {
                 if (!member.IsAlive)
@@ -48,11 +63,21 @@ namespace FactionTactics.Orders
                     || Contains(member.PrefabName, "Gjall")
                     || (member.AssignedRole == SquadRole.Missile && jelly);
 
+                int slotIndex;
+                if (runtime != null && FormationSlotLock.TryGetSlot(runtime, member.InstanceId, out slotIndex))
+                {
+                    // locked
+                }
+                else
+                {
+                    slotIndex = fallbackIndex;
+                }
+
                 var slot = FormationSlot(
                     order.Formation,
                     member.AssignedRole,
-                    index,
-                    count,
+                    slotIndex,
+                    capacity,
                     centroid,
                     member.Position,
                     isCavalry,
@@ -111,8 +136,8 @@ namespace FactionTactics.Orders
                 if (assaultMissileCover)
                     holdGround = false;
 
-                // Ambush flankers never HoldGround — stay mobile on the orbit.
-                if (ambush && member.AssignedRole == SquadRole.Flanker)
+                // Flankers never inherit Front HoldGround (applicator invariant — Ambush/Asksvin/all).
+                if (member.AssignedRole == SquadRole.Flanker)
                     holdGround = false;
 
                 var allowChase = !keepRange
@@ -231,6 +256,7 @@ namespace FactionTactics.Orders
                     AssaultMissileCover = assaultMissileCover,
                     AllowVanillaStructure = allowVanillaStructure,
                     DeathRush = deathRush,
+                    SlotIndex = slotIndex,
                 };
 
                 Intents[member.InstanceId] = intent;
@@ -239,7 +265,7 @@ namespace FactionTactics.Orders
                 if (System.AppDomain.CurrentDomain.FriendlyName.IndexOf("testhost", System.StringComparison.OrdinalIgnoreCase) < 0)
                     TryReplicateIntent(member, intent);
 #endif
-                index++;
+                fallbackIndex++;
             }
         }
 

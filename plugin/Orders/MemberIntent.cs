@@ -31,5 +31,8 @@ namespace FactionTactics.Orders
 
         /// <summary>Meadows Death-Rush: bee-line charge; client plays vanilla alert scream.</summary>
         public bool DeathRush { get; set; }
+
+        /// <summary>Phase A: locked formation lattice index (holes allowed). Used for swing stagger.</summary>
+        public int SlotIndex { get; set; }
     }
 }

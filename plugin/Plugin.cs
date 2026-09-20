@@ -25,7 +25,7 @@ namespace FactionTactics
     {
         public const string PluginGuid = "com.nate.factiontactics";
         public const string PluginName = "FactionTactics";
-        public const string PluginVersion = "1.0.4";
+        public const string PluginVersion = "1.0.5";
 
         internal static Plugin Instance { get; private set; } = null!;
         internal static ManualLogSource Log { get; private set; } = null!;
@@ -40,6 +40,8 @@ namespace FactionTactics
         private EnemyOwnershipDirector? _enemyOwnership;
 #endif
         private float _tickAccumulator;
+        private float _burstRemaining;
+        private int _lastCandidateCount = -1;
 
         private void Awake()
         {
@@ -73,12 +75,13 @@ namespace FactionTactics
 
             // Console knobs always register so admins can ft set EnablePlugin without redeploy.
             FtConsoleCommands.Register();
+            try { ConsoleCmds.FtConfigRpc.EnsureRegistered(); } catch { /* ZRoutedRpc may be null */ }
 
             if (PluginConfig.EnablePlugin.Value)
             {
                 _harmony = new Harmony(PluginGuid);
                 MonsterAIPatches.Apply(_harmony);
-                Log.LogInfo($"{PluginName} {PluginVersion} loaded (1.0.4 hybrid commander: ZDO-only discovery + RPC intent broadcast; ZDO write optional/debug; sticky/ownership default OFF). Tick={PluginConfig.TickIntervalSeconds.Value}s");
+                Log.LogInfo($"{PluginName} {PluginVersion} loaded (1.0.5 Phase A: swing gate + slot lock + Charge hygiene + client admin ft RPC). Tick={PluginConfig.TickIntervalSeconds.Value}s");
             }
             else
             {
@@ -96,7 +99,13 @@ namespace FactionTactics
                 return;
 
             _tickAccumulator += UnityEngine.Time.deltaTime;
-            var interval = Math.Max(0.1f, PluginConfig.TickIntervalSeconds.Value);
+            var steady = Math.Max(0.1f, PluginConfig.TickIntervalSeconds.Value);
+            var interval = steady;
+            if (_burstRemaining > 0f && (PluginConfig.DiscoveryBurstOnSpawn?.Value ?? true))
+            {
+                interval = Math.Max(0.05f, PluginConfig.DiscoveryBurstSeconds?.Value ?? 0.2f);
+                _burstRemaining -= UnityEngine.Time.deltaTime;
+            }
             if (_tickAccumulator < interval)
                 return;
 
@@ -114,11 +123,33 @@ namespace FactionTactics
             try
             {
                 _director.Tick(interval);
+                MaybeStartDiscoveryBurst();
             }
             catch (Exception ex)
             {
                 Log.LogError($"SquadDirector tick failed: {ex}");
             }
+
+            try { ConsoleCmds.FtConfigRpc.EnsureRegistered(); } catch { /* ok */ }
+        }
+
+        /// <summary>
+        /// Phase A optional burst: when near-player candidate / squad count spikes, briefly tick faster.
+        /// </summary>
+        private void MaybeStartDiscoveryBurst()
+        {
+            if (!(PluginConfig.DiscoveryBurstOnSpawn?.Value ?? true))
+                return;
+            var sd = _director;
+            if (sd == null)
+                return;
+
+            var n = Math.Max(sd.LastDiscoveredCount, sd.LastCandidateGauge);
+            if (_lastCandidateCount >= 0 && n > _lastCandidateCount + 1)
+                _burstRemaining = 2.0f; // ~2s of fast ticks
+            if (_lastCandidateCount == 0 && n > 0)
+                _burstRemaining = 2.0f;
+            _lastCandidateCount = n;
         }
 
         private void OnDestroy()

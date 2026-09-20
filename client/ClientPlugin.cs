@@ -7,7 +7,7 @@ using HarmonyLib;
 namespace FactionTactics.Client
 {
     /// <summary>
-    /// Player-side Faction Tactics executor (1.0.4).
+    /// Player-side Faction Tactics executor (1.0.5).
     /// Reads ZDO intents written by the server commander and drives owned enemies
     /// (MoveTo / Hold / LookAt / DoAttack) while keeping local ZDO ownership for
     /// Character physics + hit detection latency.
@@ -17,7 +17,7 @@ namespace FactionTactics.Client
     {
         public const string PluginGuid = "com.nate.factiontactics.client";
         public const string PluginName = "FactionTactics.Client";
-        public const string PluginVersion = "1.0.4";
+        public const string PluginVersion = "1.0.5";
 
         internal static ClientPlugin Instance { get; private set; } = null!;
         internal static ManualLogSource Log { get; private set; } = null!;
@@ -40,8 +40,9 @@ namespace FactionTactics.Client
             _harmony = new Harmony(PluginGuid);
             _harmony.PatchAll(typeof(ClientPlugin).Assembly);
             try { FactionTactics.Orders.IntentRpcSync.EnsureRegistered(); } catch { /* ZRoutedRpc may not exist yet */ }
-            ClientConsoleCommands.RegisterReadOnly();
-            Log.LogInfo($"{PluginName} {PluginVersion} loaded — owning-client combat executor (RPC intents → DriveControlledAI; ZDO fallback). Install alongside/without server DLL on players.");
+            try { FactionTactics.ConsoleCmds.FtConfigRpc.EnsureRegistered(); } catch { /* ok */ }
+            ClientConsoleCommands.Register();
+            Log.LogInfo($"{PluginName} {PluginVersion} loaded — owning-client combat executor (RPC intents → CombatDriver swing gate; admin ft RPC). Install alongside/without server DLL on players.");
         }
 
         private void OnDestroy()

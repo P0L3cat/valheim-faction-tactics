@@ -21,6 +21,7 @@ namespace FactionTactics.Orders
         public const string KeyFocus = "ft_focus";
         public const string KeyTime = "ft_t";
         public const string KeySquadHash = "ft_sq";
+        public const string KeySlotIndex = "ft_sidx";
 
         public static long Writes { get; private set; }
         /// <summary>Successful schema-version stamps written (same as Writes for current schema).</summary>
@@ -104,6 +105,7 @@ namespace FactionTactics.Orders
                 zdo.Set(KeyFocus, intent.FocusTargetId ?? 0L);
                 zdo.Set(KeyTime, nowSeconds);
                 zdo.Set(KeySquadHash, StableHash(intent.SquadId));
+                zdo.Set(KeySlotIndex, intent.SlotIndex);
                 Writes++;
                 SchemaWrites++;
                 return true;
@@ -183,6 +185,7 @@ namespace FactionTactics.Orders
                     DesiredPosition = zdo.GetVec3(KeySlot, Vector3.zero),
                     FocusTargetId = focus != 0L ? focus : (long?)null,
                     SquadId = "",
+                    SlotIndex = zdo.GetInt(KeySlotIndex, 0),
                 };
                 IntentZdoCodec.ApplyFlags(intent, flags);
                 ReadsOk++;

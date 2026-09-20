@@ -4,11 +4,11 @@ namespace FactionTactics.Orders
 {
     /// <summary>
     /// Pure pack/unpack for <see cref="MemberIntent"/> ↔ ZDO ints (unit-testable without Valheim).
-    /// Schema v1 for hybrid commander→executor replication via <c>IntentZdoSync</c>.
+    /// Schema v3 for hybrid commander→executor replication via <c>IntentZdoSync</c>.
     /// </summary>
     public static class IntentZdoCodec
     {
-        public const int SchemaVersion = 2;
+        public const int SchemaVersion = 3;
 
         /// <summary>Max age (seconds) before a replicated intent is treated as stale.</summary>
         public const float StaleAfterSeconds = 6f;

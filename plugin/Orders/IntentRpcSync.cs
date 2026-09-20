@@ -284,6 +284,7 @@ namespace FactionTactics.Orders
             pkg.Write(intent.FocusTargetId ?? 0L);
             pkg.Write(writtenAt);
             pkg.Write(IntentZdoSync.StableHash(intent.SquadId));
+            pkg.Write(intent.SlotIndex); // schema v3
         }
 
         private static bool TryReadOne(ZPackage pkg, out long id, out MemberIntent intent, out float writtenAt)
@@ -303,6 +304,7 @@ namespace FactionTactics.Orders
                 var focus = pkg.ReadLong();
                 writtenAt = pkg.ReadSingle();
                 _ = pkg.ReadInt(); // squad hash (reserved)
+                var slotIndex = pkg.ReadInt(); // schema v3
 
                 if (!IntentZdoCodec.IsActive(flags))
                     return true; // consumed bytes; skip inactive
@@ -316,6 +318,7 @@ namespace FactionTactics.Orders
                     DesiredPosition = slot,
                     FocusTargetId = focus != 0L ? focus : (long?)null,
                     SquadId = "",
+                    SlotIndex = slotIndex,
                 };
                 IntentZdoCodec.ApplyFlags(intent, flags);
                 return true;
@@ -410,6 +413,7 @@ namespace FactionTactics.Orders
                 AssaultMissileCover = src.AssaultMissileCover,
                 AllowVanillaStructure = src.AllowVanillaStructure,
                 DeathRush = src.DeathRush,
+                SlotIndex = src.SlotIndex,
             };
         }
     }

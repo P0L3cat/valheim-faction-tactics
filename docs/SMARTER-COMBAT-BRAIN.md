@@ -1,6 +1,6 @@
 # Smarter combat brain — whole-hog design
 
-**Status:** design only (2026-09-19, America/Chicago).  
+**Status:** Phase A shipped in **1.0.5** (2026-09-19, America/Chicago). Phase B+ still design.  
 **Pipeline:** proven on **1.0.4** — server commander → peer-targeted `FT_MemberIntents` RPC → owning-client `CombatDriver.Drive`.  
 **Scope of this doc:** decision + actuation design. **Do not** rebuild transport. **Do not** implement or deploy from this document alone.
 
@@ -653,13 +653,12 @@ Ship those four; current doctrines will already feel better.
 | Listen-host vs dedicated swing gate? | **Same `CombatDriver` path** for the gate on every owning peer (client or listen-host). |
 
 ### Phase A checklist
-- [ ] Gate `TryDriveAttack` on Hold / Protect Front (+ cooldown + stagger)
-- [ ] Slot lock + holes (no per-death lattice rebuild)
-- [ ] Charge max seconds + post-Charge Peel on Viking/Charred (not DeathRush)
-- [ ] Debug counters: `swings`, `holdBlocks`, `slotLocks`
-- [ ] Optional discovery burst
+- [x] Gate `TryDriveAttack` on Hold / Protect Front (+ cooldown + stagger) — **1.0.5**
+- [x] Slot lock + holes (no per-death lattice rebuild) — **1.0.5**
+- [x] Charge max seconds + post-Charge Peel on Viking/Charred (not DeathRush) — **1.0.5**
+- [x] Debug counters: `swings`, `holdBlocks`, `slotLocks` — **1.0.5**
+- [x] Optional discovery burst — **1.0.5**
+- [x] Client admin `ft` RPC (`FT_ConfigCmd`) — **1.0.5**
 - [ ] Video: Skeleton wall, Greydwarf orbit, Draugr crypt, Greyling rush
 
-**Phase B only after those look right on video.**
-
-**Phase A implementation authorized** after OQ lock (2026-09-19). No scored FSM until A videos look right.
+**Phase A shipped in 1.0.5** (2026-09-19). Phase B scored FSM only after videos look right.

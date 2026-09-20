@@ -31,6 +31,17 @@ namespace FactionTactics.Squad
 
         /// <summary>True once PeakAlive reached MinSquadSize (for IsBroken below-min proxy).</summary>
         public bool EverMetMinSize { get; set; }
+
+        // --- Phase A formation slot lock ---
+        /// <summary>Stable instanceId → lattice index; dead entries left as holes until reshuffle.</summary>
+        public System.Collections.Generic.Dictionary<long, int> LockedSlots { get; }
+            = new System.Collections.Generic.Dictionary<long, int>();
+
+        public int SlotLockCapacity { get; set; } = 1;
+        public float SlotLockAgeSeconds { get; set; }
+        public float SlotLockCasualtyRatio { get; set; }
+        public DoctrineOrderKind? SlotLockOrderKind { get; set; }
+        public FactionTactics.Orders.FormationType? SlotLockFormation { get; set; }
     }
 
     /// <summary>Builds stable squad keys and matches clusters across ticks by member-id overlap.</summary>

@@ -66,13 +66,31 @@ namespace FactionTactics.Config
         public static ConfigEntry<float> AmbushAmbiencePlayerRange { get; private set; } = null!;
         public static ConfigEntry<int> AmbushAmbienceMinSquadSize { get; private set; } = null!;
 
+
+        // --- Phase A actuation (1.0.5) ---
+        public static ConfigEntry<float> HoldAttackCooldown { get; private set; } = null!;
+        public static ConfigEntry<float> HoldAttackRangeFactor { get; private set; } = null!;
+        public static ConfigEntry<float> SwingStaggerMs { get; private set; } = null!;
+        public static ConfigEntry<float> FormationReshuffleSeconds { get; private set; } = null!;
+        public static ConfigEntry<float> FormationCasualtyReshuffle { get; private set; } = null!;
+        public static ConfigEntry<float> ChargeMaxSeconds { get; private set; } = null!;
+        public static ConfigEntry<float> FlankSplitMeters { get; private set; } = null!;
+        public static ConfigEntry<float> IsolateBuddyMeters { get; private set; } = null!;
+        public static ConfigEntry<bool> DiscoveryBurstOnSpawn { get; private set; } = null!;
+        public static ConfigEntry<float> DiscoveryBurstSeconds { get; private set; } = null!;
+
+
         public static ConfigEntry<float> AmbushOuterPocket { get; private set; } = null!;
         public static ConfigEntry<float> AmbushInnerBand { get; private set; } = null!;
         public static ConfigEntry<float> AmbushReEncircleGap { get; private set; } = null!;
 
 
+        private static readonly object BindGate = new object();
+
         public static void Bind(ConfigFile config)
         {
+            lock (BindGate)
+            {
             File = config;
             Knobs.Clear();
 
@@ -361,7 +379,70 @@ namespace FactionTactics.Config
                 3,
                 "Minimum alive Ambush (Greydwarf) squad size before ambience can fire.");
 
+            HoldAttackCooldown = config.Bind(
+                "Combat",
+                "HoldAttackCooldown",
+                0.85f,
+                "Phase A: seconds between Hold/Protect Front swings (floor; also respects m_minAttackInterval).");
+
+            HoldAttackRangeFactor = config.Bind(
+                "Combat",
+                "HoldAttackRangeFactor",
+                1.0f,
+                "Phase A: scale of m_aiAttackRange required to swing on Hold/Protect Front.");
+
+            SwingStaggerMs = config.Bind(
+                "Combat",
+                "SwingStaggerMs",
+                75f,
+                "Phase A: per-slot swing stagger in milliseconds (slotIndex * SwingStaggerMs).");
+
+            FormationReshuffleSeconds = config.Bind(
+                "Combat",
+                "FormationReshuffleSeconds",
+                3.0f,
+                "Phase A: slot lock lifetime before formation lattice rebuild (leave holes for dead until then).");
+
+            FormationCasualtyReshuffle = config.Bind(
+                "Combat",
+                "FormationCasualtyReshuffle",
+                0.25f,
+                "Phase A: casualty-ratio delta that forces a formation slot reshuffle.");
+
+            ChargeMaxSeconds = config.Bind(
+                "Combat",
+                "ChargeMaxSeconds",
+                4.0f,
+                "Phase A: hard cap on Charge before forced re-eval (DeathRush exempt).");
+
+            FlankSplitMeters = config.Bind(
+                "Combat",
+                "FlankSplitMeters",
+                12f,
+                "Phase A/B: players split farther than this → FlankOpportunity (default 12).");
+
+            IsolateBuddyMeters = config.Bind(
+                "Combat",
+                "IsolateBuddyMeters",
+                8f,
+                "Phase A/B: no allied player within this of the contact player → TargetIsolated (default 8).");
+
+            DiscoveryBurstOnSpawn = config.Bind(
+                "Combat",
+                "DiscoveryBurstOnSpawn",
+                true,
+                "Phase A: briefly speed SquadDirector ticks on spawn / near-player ZDO candidate spike.");
+
+            DiscoveryBurstSeconds = config.Bind(
+                "Combat",
+                "DiscoveryBurstSeconds",
+                0.2f,
+                "Phase A: burst tick interval (seconds) during discovery spike window, then back to TickIntervalSeconds.");
+
+
             RegisterAllKnobs();
+            try { FactionTactics.Combat.CombatTuning.CopyFromPluginConfig(); } catch { /* ok */ }
+            } // end BindGate
         }
 
         private static void RegisterAllKnobs()
@@ -379,7 +460,10 @@ namespace FactionTactics.Config
                 EnableEnemyServerOwnership, EnemyOwnershipIntervalSeconds, EnemyOwnershipMaxCreatesPerTick,
                 EnableStickyEnemyOwnership, EnableRpcIntentSync, EnableZdoIntentSync, EnableOwnerCombatExecutor,
                 EnableAmbushAmbienceTemp, AmbushAmbienceFogEnvironment, AmbushAmbienceMessage,
-                AmbushAmbienceMessageCooldownSeconds, AmbushAmbiencePlayerRange, AmbushAmbienceMinSquadSize);
+                AmbushAmbienceMessageCooldownSeconds, AmbushAmbiencePlayerRange, AmbushAmbienceMinSquadSize,
+                HoldAttackCooldown, HoldAttackRangeFactor, SwingStaggerMs,
+                FormationReshuffleSeconds, FormationCasualtyReshuffle, ChargeMaxSeconds,
+                FlankSplitMeters, IsolateBuddyMeters, DiscoveryBurstOnSpawn, DiscoveryBurstSeconds);
         }
 
         private static void Register(params ConfigEntryBase[] entries)

@@ -1,4 +1,4 @@
-# Faction Tactics console knobs (1.0.4)
+# Faction Tactics console knobs (1.0.5)
 
 Admin / dedicated / listen-host **Terminal** commands to tweak live `PluginConfig` without redeploying DLLs.
 
@@ -58,3 +58,44 @@ SquadDirector and doctrines already read `ConfigEntry.Value` each tick. After `f
 - `ft set` writes the BepInEx config file (`BepInEx/config/com.nate.factiontactics.cfg`).
 - `EnablePlugin false` stops ticking but console stays registered so you can turn it back on.
 - Sticky / enemy server ownership remain debug-oriented; prefer hybrid ZDO intents + client executor.
+
+
+## Client admin (dedicated) — 1.0.5
+
+Nate joins a **dedicated** server with Server Devcommands. From the **client F5 console** as admin:
+
+```
+ft help
+ft get HoldAttackCooldown
+ft set HoldAttackCooldown 1.2
+ft set SwingStaggerMs 100
+ft set FormationReshuffleSeconds 3
+ft set ChargeMaxSeconds 4
+ft reload
+ft status
+```
+
+How it works:
+
+1. Client registers `ft` with `onlyServer:false`, `onlyAdmin:true`.
+2. `ft set` / `ft reload` / `ft get` / `ft status` / `ft help` send `FT_ConfigCmd` ZRoutedRpc to the dedicated server.
+3. Server checks the sender against the ZNet admin list (`PlayerIsAdmin` / `m_adminList`). Non-admins get `[ft] denied`.
+4. Server applies `PluginConfig` + `ConfigFile.Save`, then replies via `FT_ConfigReply`.
+5. Executor knobs (`HoldAttackCooldown`, `HoldAttackRangeFactor`, `SwingStaggerMs`) are broadcast to all peers via `FT_ConfigSync` so owning-client CombatDrivers pick them up.
+
+Listen-host (server DLL present) still uses the local `ft` command (no RPC). Pure clients skip registering when the server DLL is also loaded.
+
+### Phase A combat knobs
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `HoldAttackCooldown` | 0.85 | Seconds between Hold/Protect Front swings |
+| `HoldAttackRangeFactor` | 1.0 | Scale of `m_aiAttackRange` for the swing gate |
+| `SwingStaggerMs` | 75 | Per-slot stagger (ms) |
+| `FormationReshuffleSeconds` | 3.0 | Slot lock lifetime before lattice rebuild |
+| `FormationCasualtyReshuffle` | 0.25 | Casualty delta that forces reshuffle |
+| `ChargeMaxSeconds` | 4.0 | Hard cap on Charge (DeathRush exempt) |
+| `FlankSplitMeters` | 12 | Players farther apart → FlankOpportunity |
+| `IsolateBuddyMeters` | 8 | No buddy within this → TargetIsolated |
+| `DiscoveryBurstOnSpawn` | true | Fast ticks on candidate spike |
+| `DiscoveryBurstSeconds` | 0.2 | Burst tick interval |

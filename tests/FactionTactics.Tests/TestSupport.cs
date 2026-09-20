@@ -15,13 +15,19 @@ namespace FactionTactics.Tests
     internal static class TestConfig
     {
         private static bool _bound;
+        private static readonly object Gate = new object();
 
         public static void EnsureBound()
         {
             if (_bound)
                 return;
-            PluginConfig.Bind(new ConfigFile(Path.Combine(Path.GetTempPath(), "faction-tactics-tests.cfg"), false));
-            _bound = true;
+            lock (Gate)
+            {
+                if (_bound)
+                    return;
+                PluginConfig.Bind(new ConfigFile(Path.Combine(Path.GetTempPath(), "faction-tactics-tests.cfg"), false));
+                _bound = true;
+            }
         }
     }
 

@@ -32,19 +32,27 @@ namespace FactionTactics.Ambience
         /// </summary>
         public void Tick(IReadOnlyList<SquadUnit> active)
         {
-            if (PluginConfig.EnableAmbushAmbienceTemp?.Value != true)
+            try
             {
-                ClearForcedEnv();
-                return;
-            }
+                if (PluginConfig.EnableAmbushAmbienceTemp?.Value != true)
+                {
+                    ClearForcedEnv();
+                    return;
+                }
 
 #if VALHEIM_REFS
-            TickLive(active);
+                TickLive(active);
 #else
-            // Stub / CI: no EnvMan or players. Keep the method so SquadDirector always calls it.
-            _ = active;
-            ClearForcedEnv();
+                // Stub / CI: no EnvMan or players. Keep the method so SquadDirector always calls it.
+                _ = active;
+                ClearForcedEnv();
 #endif
+            }
+            catch
+            {
+                // SoftReferenceableAssets / EnvMan missing in unit-test hosts
+                _forced = false;
+            }
         }
 
         /// <summary>True while this director currently holds a forced EnvMan environment.</summary>

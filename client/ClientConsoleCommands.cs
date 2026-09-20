@@ -1,24 +1,26 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using FactionTactics.Combat;
+using FactionTactics.ConsoleCmds;
 using FactionTactics.Orders;
 
 namespace FactionTactics.Client
 {
     /// <summary>
-    /// Read-only <c>ft status</c> / <c>ft help</c> on pure clients.
-    /// Skips registration when the server FactionTactics.dll is also loaded (listen-host)
-    /// so the full admin knobs win.
+    /// 1.0.5: full <c>ft help|get|set|reload|status</c> on pure clients.
+    /// Mutating commands RPC to dedicated (FtConfigRpc); admin-only.
+    /// Skips registration when server FactionTactics.dll is also loaded (listen-host).
     /// </summary>
     internal static class ClientConsoleCommands
     {
         private static bool _registered;
 
-        public static void RegisterReadOnly()
+        public static void Register()
         {
             if (_registered)
                 return;
 
-            // Listen-host installs both DLLs — server plugin owns the full `ft` command.
             if (Type.GetType("FactionTactics.Plugin, FactionTactics", throwOnError: false) != null)
             {
                 ClientPlugin.Log?.LogInfo("FactionTactics.Client: skipping ft console (server plugin present).");
@@ -27,9 +29,22 @@ namespace FactionTactics.Client
 
             _registered = true;
 #if VALHEIM_REFS
+            FtConfigRpc.LocalPrint = line =>
+            {
+                try
+                {
+                    // Valheim Terminal console (not System.Console)
+                    var c = global::Console.instance;
+                    if (c != null)
+                        c.Print(line);
+                }
+                catch { /* ok */ }
+                try { ClientPlugin.Log?.LogInfo(line); } catch { /* ok */ }
+            };
+
             _ = new Terminal.ConsoleCommand(
                 "ft",
-                "Faction Tactics (client read-only): ft status | ft help",
+                "Faction Tactics admin: ft help | get <key> | set <key> <value> | reload | status (RPC to dedicated)",
                 (Terminal.ConsoleEventArgs args) => Run(args),
                 isCheat: false,
                 isNetwork: false,
@@ -37,35 +52,99 @@ namespace FactionTactics.Client
                 isSecret: false,
                 allowInDevBuild: true,
                 hideBehindDevCommands: false,
-                optionsFetcher: () => new List<string> { "help", "status" },
+                optionsFetcher: TabOptions,
                 alwaysRefreshTabOptions: true,
                 remoteCommand: false,
-                onlyAdmin: false);
-            ClientPlugin.Log?.LogInfo("FactionTactics.Client: registered read-only 'ft status'.");
+                onlyAdmin: true);
+            ClientPlugin.Log?.LogInfo("FactionTactics.Client: registered admin 'ft' (RPC to dedicated).");
 #endif
         }
 
 #if VALHEIM_REFS
+        private static List<string> TabOptions()
+        {
+            return new List<string>
+            {
+                "help", "get", "set", "reload", "status",
+                "HoldAttackCooldown", "SwingStaggerMs", "HoldAttackRangeFactor",
+                "FormationReshuffleSeconds", "FormationCasualtyReshuffle", "ChargeMaxSeconds",
+                "FlankSplitMeters", "IsolateBuddyMeters",
+                "DiscoveryBurstOnSpawn", "DiscoveryBurstSeconds",
+                "TickIntervalSeconds", "MinSquadSize", "DiscoveryRadius",
+            };
+        }
+
         private static void Run(Terminal.ConsoleEventArgs args)
         {
-            var sub = args.Length >= 2 ? args[1].ToLowerInvariant() : "status";
-            if (sub == "help" || sub == "?")
+            if (!FtConfigRpc.LocalPlayerIsAdmin())
             {
-                args.Context.AddString($"[ft] FactionTactics.Client {ClientPlugin.PluginVersion} (read-only)");
-                args.Context.AddString("  ft status — version / schema / local ZDO read counters");
-                args.Context.AddString("  Full get/set/reload knobs require the server DLL (dedicated or listen-host console).");
+                args.Context.AddString("[ft] admin only (ZNet admin list / host)");
                 return;
             }
 
-            if (sub != "status")
+            var sub = args.Length >= 2 ? args[1].ToLowerInvariant() : "help";
+            switch (sub)
             {
-                args.Context.AddString("[ft] client supports: ft status | ft help");
-                return;
+                case "help":
+                case "?":
+                    PrintLocalHelp(args);
+                    FtConfigRpc.SendCmd("help");
+                    break;
+                case "get":
+                    if (args.Length < 3)
+                    {
+                        args.Context.AddString("[ft] usage: ft get <key>");
+                        return;
+                    }
+                    FtConfigRpc.SendCmd("get", args[2]);
+                    break;
+                case "set":
+                    if (args.Length < 4)
+                    {
+                        args.Context.AddString("[ft] usage: ft set <key> <value>");
+                        return;
+                    }
+                    {
+                        var key = args[2];
+                        var raw = string.Join(" ", args.Args.Skip(3));
+                        args.Context.AddString($"[ft] requesting server set {key}={raw} …");
+                        FtConfigRpc.SendCmd("set", key, raw);
+                    }
+                    break;
+                case "reload":
+                    args.Context.AddString("[ft] requesting server reload …");
+                    FtConfigRpc.SendCmd("reload");
+                    break;
+                case "status":
+                    PrintLocalStatus(args);
+                    FtConfigRpc.SendCmd("status");
+                    break;
+                default:
+                    args.Context.AddString($"[ft] unknown subcommand '{args[1]}' — try: ft help");
+                    break;
             }
+        }
 
+        private static void PrintLocalHelp(Terminal.ConsoleEventArgs args)
+        {
+            args.Context.AddString($"[ft] FactionTactics.Client {ClientPlugin.PluginVersion} (admin RPC → dedicated)");
+            args.Context.AddString("  ft help | get <key> | set <key> <value> | reload | status");
+            args.Context.AddString("  Mutating commands apply on the dedicated server PluginConfig (persisted).");
+            args.Context.AddString("  Phase A knobs: HoldAttackCooldown, SwingStaggerMs, FormationReshuffleSeconds,");
+            args.Context.AddString("    ChargeMaxSeconds, FlankSplitMeters, IsolateBuddyMeters, DiscoveryBurst*");
+            args.Context.AddString($"  Local executor tuning: HoldAttackCooldown={CombatTuning.HoldAttackCooldown} SwingStaggerMs={CombatTuning.SwingStaggerMs}");
+        }
+
+        private static void PrintLocalStatus(Terminal.ConsoleEventArgs args)
+        {
             args.Context.AddString($"[ft] FactionTactics.Client {ClientPlugin.PluginVersion} product={FtVersion.ProductVersion} schema=v{FtVersion.IntentSchemaVersion}");
             args.Context.AddString(
-                $"[ft] zdo: readsOk={IntentZdoSync.ReadsOk} stale={IntentZdoSync.ReadsStale} mismatch={IntentZdoSync.SchemaMismatches} rpcRecv={IntentRpcSync.RpcIntentsReceived} rpcPkts={IntentRpcSync.RpcPacketsReceived} rpcHits={IntentRpcSync.RpcCacheHits} ownerDrives={ClientMonsterAI_UpdateAI_Patch.DriveHits} rpcDrives={ClientMonsterAI_UpdateAI_Patch.RpcDriveHits}");
+                $"[ft] local: swings={CombatDriver.Swings} holdBlocks={CombatDriver.HoldBlocks} drives={ClientMonsterAI_UpdateAI_Patch.DriveHits} rpcDrives={ClientMonsterAI_UpdateAI_Patch.RpcDriveHits}");
+            args.Context.AddString(
+                $"[ft] zdo: readsOk={IntentZdoSync.ReadsOk} stale={IntentZdoSync.ReadsStale} mismatch={IntentZdoSync.SchemaMismatches} rpcRecv={IntentRpcSync.RpcIntentsReceived} rpcPkts={IntentRpcSync.RpcPacketsReceived} rpcHits={IntentRpcSync.RpcCacheHits}");
+            args.Context.AddString(
+                $"[ft] tuning: HoldAttackCooldown={CombatTuning.HoldAttackCooldown} SwingStaggerMs={CombatTuning.SwingStaggerMs} RangeFactor={CombatTuning.HoldAttackRangeFactor}");
+            args.Context.AddString("[ft] requesting server status …");
         }
 #endif
     }

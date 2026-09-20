@@ -71,6 +71,17 @@ namespace FactionTactics.Squad
         /// <summary>Last discovered cluster count (before minSize gate).</summary>
         public int LastDiscoveredCount => _lastDiscoveredCount;
 
+        /// <summary>Phase A: last discovery candidate count (ZDO+live) for burst detection.</summary>
+        public int LastCandidateGauge
+        {
+            get
+            {
+                if (_discovery is SquadDiscovery sd)
+                    return Math.Max(sd.LastCandidateCount, sd.LastZdoCandidateCount);
+                return _lastDiscoveredCount;
+            }
+        }
+
         /// <summary>Console <c>ft status</c> lines (no prefix).</summary>
         public IEnumerable<string> FormatStatusLines()
         {
@@ -108,6 +119,15 @@ namespace FactionTactics.Squad
             rpcBatchesSent = FactionTactics.Orders.IntentRpcSync.RpcBatchesSent;
 #endif
             yield return $"zdo: writes={zdoWrites} schemaWrites={schemaWrites} readsOk={zdoReads} stale={zdoStale} mismatch={schemaMismatch} ownerDrives={ownerDrives} rpcIntentsSent={rpcIntentsSent} rpcPeerInvokes={rpcPeerInvokes} rpcBatchesSent={rpcBatchesSent}";
+
+            long swings = 0, holdBlocks = 0, slotLocks = 0, reshuffles = 0;
+#if VALHEIM_REFS
+            swings = FactionTactics.Combat.CombatDriver.Swings;
+            holdBlocks = FactionTactics.Combat.CombatDriver.HoldBlocks;
+#endif
+            slotLocks = FactionTactics.Orders.FormationSlotLock.SlotLocks;
+            reshuffles = FactionTactics.Orders.FormationSlotLock.Reshuffles;
+            yield return $"combat: swings={swings} holdBlocks={holdBlocks} slotLocks={slotLocks} reshuffles={reshuffles}";
 
             if (_discovery is SquadDiscovery sd)
             {
@@ -173,17 +193,19 @@ namespace FactionTactics.Squad
                 }
 
                 order = MaybeRescoreOrder(order, snapshot);
+                order = ApplyChargeMaxHygiene(squad, state, order, snapshot);
                 squad.CurrentOrder = order;
                 if (state.PreviousOrderKind != order.OrderKind)
                 {
                     state.OrderAgeSeconds = 0f;
                     squad.OrderAgeSeconds = 0f;
+                    // Order change also resets slot-lock age via FormationSlotLock reshuffle.
                 }
                 squad.PreviousOrderKind = order.OrderKind;
                 state.PreviousOrderKind = order.OrderKind;
                 try
                 {
-                    _applicator.Apply(squad, order);
+                    _applicator.Apply(squad, order, state);
                     _active.Add(squad);
                 }
                 catch (Exception ex)
@@ -205,7 +227,12 @@ namespace FactionTactics.Squad
 
             PruneUnseenRuntime(seen);
             _ = _registry;
-            _ambience.Tick(_active);
+            try { _ambience.Tick(_active); }
+            catch (Exception ex)
+            {
+                // SoftReferenceableAssets / EnvMan missing in unit-test hosts
+                Plugin.Log?.LogDebug($"AmbushAmbience.Tick: {ex.GetType().Name}: {ex.Message}");
+            }
 #if VALHEIM_REFS
             // 1.0.3: flush queued MemberIntent RPC batch once per tick (primary hybrid transport).
             try { FactionTactics.Orders.IntentRpcSync.EnsureRegistered(); FactionTactics.Orders.IntentRpcSync.FlushBroadcast(); }
@@ -334,6 +361,12 @@ namespace FactionTactics.Squad
             rpcBatchesSent = FactionTactics.Orders.IntentRpcSync.RpcBatchesSent;
             rpcPeerInvokes = FactionTactics.Orders.IntentRpcSync.RpcPeerInvokes;
 #endif
+            long swingsHb = 0, holdBlocksHb = 0, slotLocksHb = 0;
+#if VALHEIM_REFS
+            swingsHb = FactionTactics.Combat.CombatDriver.Swings;
+            holdBlocksHb = FactionTactics.Combat.CombatDriver.HoldBlocks;
+#endif
+            slotLocksHb = FactionTactics.Orders.FormationSlotLock.SlotLocks;
             Plugin.Log?.LogInfo(
                 $"FactionTactics heartbeat: discovered={_lastDiscoveredCount} active={_active.Count} " +
                 $"squads={_active.Count} orders=[{topOrders}] " +
@@ -344,7 +377,8 @@ namespace FactionTactics.Squad
                 $"enemyOwned={enemyOwned} enemyLive={enemyLive} enemyMai={enemyMai} " +
                 $"enemyServerOwned={enemyServerOwned} enemyClientOwned={enemyClientOwned} " +
                 $"enemyReclaims={enemyReclaims} stickyKeeps={stickyKeeps} stickyReclaims={stickyReclaims}" +
-                $" zdoIntentsWritten={zdoIntentsWritten} schemaWrites={schemaWrites} zdoReads={zdoReads} zdoStale={zdoStale} schemaMismatch={schemaMismatch} ownerDrives={ownerDrives} rpcIntentsSent={rpcIntentsSent} rpcPeerInvokes={rpcPeerInvokes} rpcBatchesSent={rpcBatchesSent}");
+                $" zdoIntentsWritten={zdoIntentsWritten} schemaWrites={schemaWrites} zdoReads={zdoReads} zdoStale={zdoStale} schemaMismatch={schemaMismatch} ownerDrives={ownerDrives} rpcIntentsSent={rpcIntentsSent} rpcPeerInvokes={rpcPeerInvokes} rpcBatchesSent={rpcBatchesSent}" +
+                $" swings={swingsHb} holdBlocks={holdBlocksHb} slotLocks={slotLocksHb}");
         }
 
         private SquadRuntimeState MatchOrCreateRuntime(SquadUnit squad)
@@ -384,6 +418,7 @@ namespace FactionTactics.Squad
         {
             state.AgeSeconds += dt;
             state.OrderAgeSeconds += dt;
+            FactionTactics.Orders.FormationSlotLock.TickAge(state, dt);
             squad.AgeSeconds = state.AgeSeconds;
             squad.OrderAgeSeconds = state.OrderAgeSeconds;
             squad.PreviousOrderKind = state.PreviousOrderKind;
@@ -472,6 +507,127 @@ namespace FactionTactics.Squad
             return order;
         }
 
+
+        /// <summary>
+        /// Phase A: hard-cap Charge duration then force Peel/reform (DeathRush exempt).
+        /// Viking/Charred already peel on previous==Charge; this catches lingerers.
+        /// </summary>
+        private static SquadOrder ApplyChargeMaxHygiene(
+            SquadUnit squad,
+            SquadRuntimeState state,
+            SquadOrder order,
+            SquadSnapshot snapshot)
+        {
+            if (order == null)
+                return order!;
+            var deathRush = string.Equals(squad.Doctrine?.Id, "death-rush", StringComparison.OrdinalIgnoreCase);
+            if (deathRush)
+                return order;
+            if (order.OrderKind != DoctrineOrderKind.Charge)
+                return order;
+            if (state.PreviousOrderKind != DoctrineOrderKind.Charge)
+                return order; // first tick of Charge — allow flash
+
+            var maxSec = PluginConfig.ChargeMaxSeconds?.Value ?? 4f;
+            if (state.OrderAgeSeconds < maxSec)
+                return order;
+
+            // Forced re-eval: prefer doctrine post-Charge path via RetreatAndReform / Hold.
+            var doctrineId = squad.Doctrine?.Id ?? "";
+            if (string.Equals(doctrineId, "ambush", StringComparison.OrdinalIgnoreCase))
+                order.OrderKind = DoctrineOrderKind.Kite;
+            else if (string.Equals(doctrineId, "artillery-jelly", StringComparison.OrdinalIgnoreCase))
+                order.OrderKind = DoctrineOrderKind.FocusFire;
+            else
+                order.OrderKind = DoctrineOrderKind.RetreatAndReform;
+            order.Source = (order.Source ?? "") + "+ChargeMax";
+            return order;
+        }
+
+        /// <summary>
+        /// OQ lock: FlankOpportunity = one player in contact band OR players split &gt; FlankSplitMeters.
+        /// TargetIsolated = contact player with no buddy within IsolateBuddyMeters.
+        /// </summary>
+        private static void ApplyFlankAndIsolate(Vector3 centroid, float nearest, ThreatAssessment assessment)
+        {
+            var splitM = PluginConfig.FlankSplitMeters?.Value ?? 12f;
+            var buddyM = PluginConfig.IsolateBuddyMeters?.Value ?? 8f;
+            var contactBand = 12f;
+
+#if VALHEIM_REFS
+            try
+            {
+                var players = ValheimWorldScan.CollectPlayerPositions();
+                if (players == null || players.Count == 0)
+                {
+                    // Keep role-seeded FlankOpportunity from AssessThreats init.
+                    return;
+                }
+
+                // Nearest player to centroid = contact candidate.
+                int nearestIdx = -1;
+                float nearestPlayer = float.MaxValue;
+                for (int i = 0; i < players.Count; i++)
+                {
+                    var d = Vector3.Distance(centroid, players[i]);
+                    if (d < nearestPlayer)
+                    {
+                        nearestPlayer = d;
+                        nearestIdx = i;
+                    }
+                }
+
+                bool oneInContact = nearestPlayer <= contactBand
+                                    || (nearest < float.MaxValue && nearest <= contactBand);
+
+                bool split = false;
+                if (players.Count >= 2)
+                {
+                    for (int i = 0; i < players.Count && !split; i++)
+                    {
+                        for (int j = i + 1; j < players.Count; j++)
+                        {
+                            if (Vector3.Distance(players[i], players[j]) > splitM)
+                            {
+                                split = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                assessment.FlankOpportunity = oneInContact || split;
+
+                bool isolated = false;
+                if (oneInContact && nearestIdx >= 0)
+                {
+                    isolated = true;
+                    var focus = players[nearestIdx];
+                    for (int i = 0; i < players.Count; i++)
+                    {
+                        if (i == nearestIdx)
+                            continue;
+                        if (Vector3.Distance(focus, players[i]) <= buddyM)
+                        {
+                            isolated = false;
+                            break;
+                        }
+                    }
+                }
+                assessment.TargetIsolated = isolated;
+            }
+            catch
+            {
+                // keep prior flags
+            }
+#else
+            _ = centroid;
+            _ = nearest;
+            _ = splitM;
+            _ = buddyM;
+            _ = contactBand;
+#endif
+        }
 
         /// <summary>Per-doctrine min roster. Death-Rush defaults to 1 (tiny Meadows packs).</summary>
         public static int EffectiveMinSize(string? doctrineId)
@@ -573,9 +729,7 @@ namespace FactionTactics.Squad
             assessment.MissileThreatened = assessment.ThreatCount > 0 && nearest < 12f
                 && squad.Members.Exists(m => m.AssignedRole == SquadRole.Missile);
 
-            assessment.TargetIsolated = engaged > 0 && alivePos >= 3
-                && (assessment.ThreatCount <= 1)
-                && nearest <= 12f;
+            ApplyFlankAndIsolate(centroid, nearest, assessment);
 
             EnrichTrollProximity(centroid, assessment);
             EnrichEnvironmentHeuristics(squad, centroid, assessment);
@@ -756,28 +910,37 @@ namespace FactionTactics.Squad
             if (!TrollFortressHelper.IsEnabled)
                 return;
 
-            var range = TrollFortressHelper.SynergyRange;
-            var ais = FactionTactics.Util.ValheimWorldScan.EnumerateMonsterAIs();
-            int count = 0;
-            float nearest = float.MaxValue;
-            foreach (var ai in ais)
+            try
             {
-                var ch = ValheimIds.GetCharacter(ai);
-                if (ch == null || ch.IsDead())
-                    continue;
-                var prefab = ch.name.Replace("(Clone)", "").Trim();
-                if (!TrollFortressHelper.IsTrollPrefab(prefab))
-                    continue;
-                var d = Vector3.Distance(centroid, ch.transform.position);
-                if (d > range)
-                    continue;
-                count++;
-                if (d < nearest)
-                    nearest = d;
-            }
+                var range = TrollFortressHelper.SynergyRange;
+                var ais = FactionTactics.Util.ValheimWorldScan.EnumerateMonsterAIs();
+                int count = 0;
+                float nearest = float.MaxValue;
+                foreach (var ai in ais)
+                {
+                    var ch = ValheimIds.GetCharacter(ai);
+                    if (ch == null || ch.IsDead())
+                        continue;
+                    var prefab = ch.name.Replace("(Clone)", "").Trim();
+                    if (!TrollFortressHelper.IsTrollPrefab(prefab))
+                        continue;
+                    var d = Vector3.Distance(centroid, ch.transform.position);
+                    if (d > range)
+                        continue;
+                    count++;
+                    if (d < nearest)
+                        nearest = d;
+                }
 
-            assessment.NearbyTrollCount = count;
-            assessment.NearestTrollDistance = nearest;
+                assessment.NearbyTrollCount = count;
+                assessment.NearestTrollDistance = nearest;
+            }
+            catch
+            {
+                // Unit-test hosts / missing Splatform — leave stub zeros.
+                assessment.NearbyTrollCount = 0;
+                assessment.NearestTrollDistance = float.MaxValue;
+            }
         }
 
         private static void TryThreatConditionFlags(Character target, ThreatAssessment assessment)

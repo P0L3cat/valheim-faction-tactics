@@ -1,5 +1,6 @@
 #if VALHEIM_REFS
 using FactionTactics.Orders;
+using FactionTactics.ConsoleCmds;
 using HarmonyLib;
 
 namespace FactionTactics.HarmonyPatches
@@ -15,6 +16,7 @@ namespace FactionTactics.HarmonyPatches
         public static void Postfix()
         {
             IntentRpcSync.EnsureRegistered();
+            FtConfigRpc.EnsureRegistered();
         }
     }
 
@@ -25,6 +27,7 @@ namespace FactionTactics.HarmonyPatches
         public static void Postfix(/* ZNetPeer peer */)
         {
             IntentRpcSync.EnsureRegistered();
+            FtConfigRpc.EnsureRegistered();
         }
     }
 
@@ -36,6 +39,7 @@ namespace FactionTactics.HarmonyPatches
         {
             if (!IntentRpcSync.IsRegistered)
                 IntentRpcSync.EnsureRegistered();
+            FtConfigRpc.EnsureRegistered();
         }
     }
 
@@ -47,6 +51,7 @@ namespace FactionTactics.HarmonyPatches
         {
             if (!IntentRpcSync.IsRegistered)
                 IntentRpcSync.EnsureRegistered();
+            FtConfigRpc.EnsureRegistered();
         }
     }
 }

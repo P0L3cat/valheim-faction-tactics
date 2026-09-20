@@ -186,6 +186,8 @@ namespace FactionTactics.ConsoleCmds
 
             args.Context.AddString($"[ft] {entry.Definition.Key}: {before} → {FormatValue(entry)} (persisted)");
             Plugin.Log?.LogInfo($"[ft set] {entry.Definition.Key}={FormatValue(entry)} (was {before})");
+            try { FactionTactics.Combat.CombatTuning.CopyFromPluginConfig(); } catch { /* ok */ }
+            try { FtConfigRpc.EnsureRegistered(); } catch { /* ok */ }
         }
 
         private static void CmdReload(Terminal.ConsoleEventArgs args)
@@ -215,7 +217,7 @@ namespace FactionTactics.ConsoleCmds
                 args.Context.AddString(line);
         }
 
-        internal static IEnumerable<string> BuildStatusLines()
+        public static IEnumerable<string> BuildStatusLines()
         {
             yield return $"[ft] Faction Tactics {Plugin.PluginVersion} product={FtVersion.ProductVersion} schema=v{FtVersion.IntentSchemaVersion}";
             yield return $"[ft] EnablePlugin={PluginConfig.EnablePlugin?.Value} tick={PluginConfig.TickIntervalSeconds?.Value}s " +
@@ -309,6 +311,79 @@ namespace FactionTactics.ConsoleCmds
                 return b ? "true" : "false";
             return Convert.ToString(v, CultureInfo.InvariantCulture) ?? "";
         }
+
+        // --- Shared with FtConfigRpc (client admin path) ---
+
+        public static IEnumerable<string> BuildHelpLines()
+        {
+            yield return $"[ft] Faction Tactics {FtVersion.ProductVersion} (schema v{FtVersion.IntentSchemaVersion})";
+            yield return "  ft help                 — this list";
+            yield return "  ft get <key>            — read ConfigEntry (server)";
+            yield return "  ft set <key> <value>    — set + persist on dedicated (admin RPC from client)";
+            yield return "  ft reload               — reload BepInEx cfg from disk (server)";
+            yield return "  ft status               — version / heartbeat / squads / combat counters";
+            yield return "Keys:";
+            foreach (var line in PluginConfig.FormatKnobHelpLines())
+                yield return "  " + line;
+        }
+
+        public static string BuildGetLine(string key)
+        {
+            if (string.IsNullOrWhiteSpace(key))
+                return "[ft] usage: ft get <key>";
+            if (!PluginConfig.TryGetKnob(key, out var entry) || entry == null)
+                return $"[ft] unknown key '{key}' — ft help";
+            return $"[ft] {entry.Definition.Key} = {FormatValuePublic(entry)}  ({entry.Definition.Section})";
+        }
+
+        public static string ApplySet(string key, string raw, out bool changed)
+        {
+            changed = false;
+            if (string.IsNullOrWhiteSpace(key))
+                return "[ft] usage: ft set <key> <value>";
+            if (!PluginConfig.TryGetKnob(key, out var entry) || entry == null)
+                return $"[ft] unknown key '{key}' — ft help";
+            var before = FormatValuePublic(entry);
+            try
+            {
+                if (!TryAssignPublic(entry, raw ?? ""))
+                    return $"[ft] could not parse '{raw}' as {entry.SettingType.Name}";
+            }
+            catch (Exception ex)
+            {
+                return $"[ft] set failed: {ex.Message}";
+            }
+            try { PluginConfig.File?.Save(); }
+            catch (Exception ex)
+            {
+                return $"[ft] value set but Save failed: {ex.Message}";
+            }
+            changed = true;
+            Plugin.Log?.LogInfo($"[ft set] {entry.Definition.Key}={FormatValuePublic(entry)} (was {before})");
+            return $"[ft] {entry.Definition.Key}: {before} → {FormatValuePublic(entry)} (persisted)";
+        }
+
+        public static string ApplyReload()
+        {
+            var file = PluginConfig.File;
+            if (file == null)
+                return "[ft] no ConfigFile bound";
+            try
+            {
+                file.Reload();
+                Plugin.Log?.LogInfo($"[ft reload] {file.ConfigFilePath}");
+                return $"[ft] reloaded {file.ConfigFilePath}";
+            }
+            catch (Exception ex)
+            {
+                return $"[ft] reload failed: {ex.Message}";
+            }
+        }
+
+        private static string FormatValuePublic(ConfigEntryBase entry) => FormatValue(entry);
+
+        private static bool TryAssignPublic(ConfigEntryBase entry, string raw) => TryAssign(entry, raw);
+
 #endif
     }
 }
