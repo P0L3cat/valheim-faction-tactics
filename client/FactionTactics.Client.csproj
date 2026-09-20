@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Version>1.0.2</Version>
+    <Version>1.0.3</Version>
     <TargetFramework>net472</TargetFramework>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
@@ -56,6 +56,7 @@
   <ItemGroup>
     <Compile Include="..\plugin\Orders\IntentZdoCodec.cs" Link="Shared\IntentZdoCodec.cs" />
     <Compile Include="..\plugin\Orders\IntentZdoSync.cs" Link="Shared\IntentZdoSync.cs" />
+    <Compile Include="..\plugin\Orders\IntentRpcSync.cs" Link="Shared\IntentRpcSync.cs" />
     <Compile Include="..\plugin\Orders\MemberIntent.cs" Link="Shared\MemberIntent.cs" />
     <Compile Include="..\plugin\Orders\FormationType.cs" Link="Shared\FormationType.cs" />
     <Compile Include="..\plugin\Orders\StanceType.cs" Link="Shared\StanceType.cs" />

@@ -7,7 +7,7 @@ using HarmonyLib;
 namespace FactionTactics.Client
 {
     /// <summary>
-    /// Player-side Faction Tactics executor (1.0.2).
+    /// Player-side Faction Tactics executor (1.0.3).
     /// Reads ZDO intents written by the server commander and drives owned enemies
     /// (MoveTo / Hold / LookAt / DoAttack) while keeping local ZDO ownership for
     /// Character physics + hit detection latency.
@@ -17,7 +17,7 @@ namespace FactionTactics.Client
     {
         public const string PluginGuid = "com.nate.factiontactics.client";
         public const string PluginName = "FactionTactics.Client";
-        public const string PluginVersion = "1.0.2";
+        public const string PluginVersion = "1.0.3";
 
         internal static ClientPlugin Instance { get; private set; } = null!;
         internal static ManualLogSource Log { get; private set; } = null!;
@@ -39,8 +39,9 @@ namespace FactionTactics.Client
 
             _harmony = new Harmony(PluginGuid);
             _harmony.PatchAll(typeof(ClientPlugin).Assembly);
+            try { FactionTactics.Orders.IntentRpcSync.EnsureRegistered(); } catch { /* ZRoutedRpc may not exist yet */ }
             ClientConsoleCommands.RegisterReadOnly();
-            Log.LogInfo($"{PluginName} {PluginVersion} loaded — owning-client combat executor (ZDO intents → DriveControlledAI). Install alongside/without server DLL on players.");
+            Log.LogInfo($"{PluginName} {PluginVersion} loaded — owning-client combat executor (RPC intents → DriveControlledAI; ZDO fallback). Install alongside/without server DLL on players.");
         }
 
         private void OnDestroy()

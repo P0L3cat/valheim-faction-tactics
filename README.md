@@ -1,8 +1,8 @@
 # Faction Tactics
 
-**1.0.2 hybrid:** server commander (`FactionTactics.dll`) + client executor (`FactionTactics.Client.dll`).
+**1.0.3 hybrid:** server commander (`FactionTactics.dll`) + client executor (`FactionTactics.Client.dll`).
 
-## Quick install (1.0.2)
+## Quick install (1.0.3)
 
 Admin console: `ft help` / `ft set <key> <value>` on dedicated or listen-host (see `docs/CONSOLE-KNOBS.md`).
 

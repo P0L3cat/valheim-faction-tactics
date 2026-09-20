@@ -53,6 +53,7 @@ namespace FactionTactics.Config
         public static ConfigEntry<int> EnemyOwnershipMaxCreatesPerTick { get; private set; } = null!;
         public static ConfigEntry<bool> EnableStickyEnemyOwnership { get; private set; } = null!;
 
+        public static ConfigEntry<bool> EnableRpcIntentSync { get; private set; } = null!;
         public static ConfigEntry<bool> EnableZdoIntentSync { get; private set; } = null!;
         public static ConfigEntry<bool> EnableOwnerCombatExecutor { get; private set; } = null!;
 
@@ -279,17 +280,23 @@ namespace FactionTactics.Config
                 "Max ZNetScene.CreateObject calls per ownership pass (avoids hitching).");
 
             
+                        EnableRpcIntentSync = config.Bind(
+                "Hybrid",
+                "EnableRpcIntentSync",
+                true,
+                "1.0.3: primary path — server broadcasts MemberIntent batches via ZRoutedRpc/ZPackage. Clients cache by ZDOID.");
+
             EnableZdoIntentSync = config.Bind(
                 "Hybrid",
                 "EnableZdoIntentSync",
-                true,
-                "0.3.0: server writes MemberIntent into enemy ZDO custom fields for owning clients to read.");
+                false,
+                "1.0.3 optional/debug fallback: write MemberIntent into enemy ZDO customs. Unreliable when dedicated is not ZDO owner (ZDO.Set from non-owner often never reaches owning client). Prefer EnableRpcIntentSync.");
 
             EnableOwnerCombatExecutor = config.Bind(
                 "Hybrid",
                 "EnableOwnerCombatExecutor",
                 true,
-                "0.3.0: on non-dedicated peers that own an enemy ZDO, Prefix-skip vanilla UpdateAI and DriveControlledAI from intent/ZDO.");
+                "0.3.0: on non-dedicated peers that own an enemy ZDO, Prefix-skip vanilla UpdateAI and DriveControlledAI from intent/RPC/ZDO.");
 
             EnableStickyEnemyOwnership = config.Bind(
                 "Dedicated",
@@ -370,7 +377,7 @@ namespace FactionTactics.Config
                 EnableSiegeAssault, WorkbenchTriggerRange, SiegeMinSquadSize, EnableSiegeAmbush, EnableSiegeViking,
                 DebugLogging, HeartbeatLogging,
                 EnableEnemyServerOwnership, EnemyOwnershipIntervalSeconds, EnemyOwnershipMaxCreatesPerTick,
-                EnableStickyEnemyOwnership, EnableZdoIntentSync, EnableOwnerCombatExecutor,
+                EnableStickyEnemyOwnership, EnableRpcIntentSync, EnableZdoIntentSync, EnableOwnerCombatExecutor,
                 EnableAmbushAmbienceTemp, AmbushAmbienceFogEnvironment, AmbushAmbienceMessage,
                 AmbushAmbienceMessageCooldownSeconds, AmbushAmbiencePlayerRange, AmbushAmbienceMinSquadSize);
         }

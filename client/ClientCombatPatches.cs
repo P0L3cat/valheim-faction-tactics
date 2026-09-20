@@ -8,8 +8,8 @@ using UnityEngine;
 namespace FactionTactics.Client
 {
     /// <summary>
-    /// Owning-client executor: read ZDO intents from the server commander and Drive combat
-    /// while keeping local IsOwner (physics + hits stay low-latency).
+    /// Owning-client executor (1.0.3): prefer RPC intent cache, then ZDO fallback.
+    /// Drive combat while keeping local IsOwner (physics + hits stay low-latency).
     /// </summary>
     [HarmonyPatch(typeof(MonsterAI))]
     public static class ClientMonsterAI_UpdateAI_Patch
@@ -17,6 +17,7 @@ namespace FactionTactics.Client
         public static long UpdateHits { get; private set; }
         public static long DriveHits { get; private set; }
         public static long SchemaRejects { get; private set; }
+        public static long RpcDriveHits { get; private set; }
 
         [HarmonyPrefix]
         [HarmonyPatch(nameof(MonsterAI.UpdateAI))]
@@ -30,9 +31,12 @@ namespace FactionTactics.Client
             if (!IntentZdoSync.IsNetOwner(__instance))
                 return true;
 
-            if (!IntentZdoSync.TryReadFromMonsterAI(__instance, Time.time, out var intent))
+            var now = Time.time;
+            MemberIntent intent;
+            var fromRpc = IntentRpcSync.TryGetFromMonsterAI(__instance, now, out intent);
+            if (!fromRpc && !IntentZdoSync.TryReadFromMonsterAI(__instance, now, out intent))
             {
-                // Track schema rejects via shared counter
+                // Schema mismatch only when ZDO has a non-zero foreign version (RPC miss + ZDO miss).
                 if (IntentZdoSync.SchemaMismatches > SchemaRejects)
                     SchemaRejects = IntentZdoSync.SchemaMismatches;
                 return true; // no FT intent → vanilla
@@ -40,6 +44,8 @@ namespace FactionTactics.Client
 
             CombatDriver.Drive(__instance, intent, dt);
             DriveHits++;
+            if (fromRpc)
+                RpcDriveHits++;
             return false; // sole brain on owner
         }
     }
@@ -55,7 +61,9 @@ namespace FactionTactics.Client
                 return true;
             if (!IntentZdoSync.IsNetOwner(mai))
                 return true;
-            if (!IntentZdoSync.TryReadFromMonsterAI(mai, Time.time, out var intent))
+            var now = Time.time;
+            if (!IntentRpcSync.TryGetFromMonsterAI(mai, now, out var intent)
+                && !IntentZdoSync.TryReadFromMonsterAI(mai, now, out intent))
                 return true;
             if (intent.AllowVanillaChase)
                 return true;
@@ -70,6 +78,17 @@ namespace FactionTactics.Client
                 point = intent.DesiredPosition;
             }
             return true;
+        }
+    }
+
+    /// <summary>Register FT_MemberIntents when ZNet/ZRoutedRpc comes up.</summary>
+    [HarmonyPatch(typeof(ZNet), "Awake")]
+    public static class ClientZNet_Awake_RegisterIntentRpc_Patch
+    {
+        [HarmonyPostfix]
+        public static void Postfix()
+        {
+            IntentRpcSync.EnsureRegistered();
         }
     }
 }

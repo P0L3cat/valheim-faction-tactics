@@ -65,7 +65,7 @@ namespace FactionTactics.Client
 
             args.Context.AddString($"[ft] FactionTactics.Client {ClientPlugin.PluginVersion} product={FtVersion.ProductVersion} schema=v{FtVersion.IntentSchemaVersion}");
             args.Context.AddString(
-                $"[ft] zdo: readsOk={IntentZdoSync.ReadsOk} stale={IntentZdoSync.ReadsStale} mismatch={IntentZdoSync.SchemaMismatches} ownerDrives={ClientMonsterAI_UpdateAI_Patch.DriveHits}");
+                $"[ft] zdo: readsOk={IntentZdoSync.ReadsOk} stale={IntentZdoSync.ReadsStale} mismatch={IntentZdoSync.SchemaMismatches} rpcRecv={IntentRpcSync.RpcIntentsReceived} rpcHits={IntentRpcSync.RpcCacheHits} ownerDrives={ClientMonsterAI_UpdateAI_Patch.DriveHits} rpcDrives={ClientMonsterAI_UpdateAI_Patch.RpcDriveHits}");
         }
 #endif
     }

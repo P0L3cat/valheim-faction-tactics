@@ -11,6 +11,13 @@ Dedicated with sticky/ownership **OFF** often has `monsterAI=0` → no squads �
 **Fix:** `ValheimWorldScan.EnumerateEnemyZdosNearPlayers` + `SquadDiscovery` ZDO-backed members (`NativeHandle=ZDO`). `OrderApplicator` already calls `IntentZdoSync.Write(zdo, …)`. Heartbeat: `zdoCandidates`, `zdoIntentsWritten`, `schemaWrites`. Client executor unchanged.
 
 
+
+## 1.0.3 fix (RPC primary hybrid transport)
+
+**Root cause (1.0.1–1.0.3):** Dedicated commander called `ZDO.Set(ft_iv,…)` without owning the ZDO. Owning clients never saw those fields → `Intent schema mismatch (zdo=0 local=2)` and skeletons ignored Hold/ShieldWall.
+
+**Fix:** Primary path is server → client **ZRoutedRpc** (`FT_MemberIntents`) broadcasting MemberIntent batches keyed by packed ZDOID. Client caches intents; DriveControlledAI reads **RPC cache first**, then ZDO. ZDO.Set remains optional/debug (`EnableZdoIntentSync` default **false**). Heartbeat: `rpcIntentsSent` / `rpcBatchesSent`. Client logs once on first RPC intent apply. Schema mismatch only for non-zero foreign ZDO schema (missing ZDO fields alone are OK when RPC works).
+
 ## Pivot (Nate)
 
 IronGate client-side combat = smooth fights. Full sticky server ownership (0.2.3) → statues / unhittable.  

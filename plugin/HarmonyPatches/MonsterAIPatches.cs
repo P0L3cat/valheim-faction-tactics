@@ -288,8 +288,13 @@ namespace FactionTactics.HarmonyPatches
             if (id != 0 && OrderApplicator.TryGetIntent(id, out intent))
                 return true;
 
-            // 0.3.0: owning client reads commander intent from ZDO customs.
-            if (IntentZdoSync.TryReadFromMonsterAI(ai, UnityEngine.Time.time, out intent))
+            var now = UnityEngine.Time.time;
+            // 1.0.3: RPC cache is primary hybrid transport (ZDO.Set from non-owner is unreliable).
+            if (id != 0 && IntentRpcSync.TryGet(id, now, out intent))
+                return true;
+
+            // Optional/debug fallback: ZDO customs.
+            if (IntentZdoSync.TryReadFromMonsterAI(ai, now, out intent))
                 return true;
 
             intent = null!;

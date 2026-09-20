@@ -235,7 +235,9 @@ namespace FactionTactics.Orders
 
                 Intents[member.InstanceId] = intent;
 #if VALHEIM_REFS
-                TryReplicateIntent(member, intent);
+                // Skip networking in unit-test hosts (Unity ECalls unavailable).
+                if (System.AppDomain.CurrentDomain.FriendlyName.IndexOf("testhost", System.StringComparison.OrdinalIgnoreCase) < 0)
+                    TryReplicateIntent(member, intent);
 #endif
                 index++;
             }
@@ -243,29 +245,46 @@ namespace FactionTactics.Orders
 
 
 #if VALHEIM_REFS
-        /// <summary>1.0.x: push intent to ZDO so owning clients can execute without server ownership (MonsterAI or raw ZDO handle).</summary>
+        /// <summary>
+        /// 1.0.3: primary path queues intent for ZRoutedRpc broadcast (see IntentRpcSync).
+        /// ZDO.Set remains optional/debug fallback — unreliable when dedicated is not ZDO owner.
+        /// </summary>
         private static void TryReplicateIntent(SquadMemberView member, MemberIntent intent)
         {
+            // Never touch UnityEngine.Time here — unit tests load VALHEIM_REFS assemblies without a Unity runtime.
+            // Client IntentRpcSync.OnRouted re-stamps WrittenAt with local Time.time.
             try
             {
-                var now = UnityEngine.Time.time;
-                if (PluginConfig.EnableZdoIntentSync?.Value == false)
+                var rpcOn = true;
+                try { rpcOn = PluginConfig.EnableRpcIntentSync?.Value != false; } catch { rpcOn = true; }
+                if (rpcOn)
+                    IntentRpcSync.Queue(member.InstanceId, intent, 0f);
+
+                var zdoOn = false;
+                try { zdoOn = PluginConfig.EnableZdoIntentSync?.Value == true; } catch { zdoOn = false; }
+                if (!zdoOn)
                     return;
+
+                // ZDO fallback only when explicitly enabled (live game). Best-effort clock.
+                float zdoNow = 0f;
+                try { zdoNow = UnityEngine.Time.time; } catch { return; }
                 if (member.NativeHandle is MonsterAI mai)
-                {
-                    IntentZdoSync.WriteFromMonsterAI(mai, intent, now);
-                    return;
-                }
-                if (member.NativeHandle is ZDO zdo)
-                    IntentZdoSync.Write(zdo, intent, now);
+                    IntentZdoSync.WriteFromMonsterAI(mai, intent, zdoNow);
+                else if (member.NativeHandle is ZDO zdo)
+                    IntentZdoSync.Write(zdo, intent, zdoNow);
             }
             catch (System.Exception ex)
             {
-                if (PluginConfig.DebugLogging?.Value == true)
-                    Plugin.Log?.LogDebug($"TryReplicateIntent: {ex.GetType().Name}: {ex.Message}");
+                try
+                {
+                    if (PluginConfig.DebugLogging?.Value == true)
+                        Plugin.Log?.LogDebug($"TryReplicateIntent: {ex.GetType().Name}: {ex.Message}");
+                }
+                catch { /* ignore */ }
             }
         }
-#endif
+
+        #endif
 
         public static bool TryGetIntent(long instanceId, out MemberIntent intent)
             => Intents.TryGetValue(instanceId, out intent!);

@@ -95,7 +95,7 @@ namespace FactionTactics.Squad
             yield return $"squads: discovered={_lastDiscoveredCount} active={_active.Count} runtime={_runtime.Count}";
             yield return $"orders: [{summary}]";
 
-            long zdoWrites = 0, schemaWrites = 0, zdoReads = 0, zdoStale = 0, schemaMismatch = 0, ownerDrives = 0;
+            long zdoWrites = 0, schemaWrites = 0, zdoReads = 0, zdoStale = 0, schemaMismatch = 0, ownerDrives = 0, rpcIntentsSent = 0;
 #if VALHEIM_REFS
             zdoWrites = FactionTactics.Orders.IntentZdoSync.Writes;
             schemaWrites = FactionTactics.Orders.IntentZdoSync.SchemaWrites;
@@ -103,8 +103,9 @@ namespace FactionTactics.Squad
             zdoStale = FactionTactics.Orders.IntentZdoSync.ReadsStale;
             schemaMismatch = FactionTactics.Orders.IntentZdoSync.SchemaMismatches;
             ownerDrives = FactionTactics.HarmonyPatches.MonsterAI_UpdateAI_Patch.OwnerDriveCount;
+            rpcIntentsSent = FactionTactics.Orders.IntentRpcSync.RpcIntentsSent;
 #endif
-            yield return $"zdo: writes={zdoWrites} schemaWrites={schemaWrites} readsOk={zdoReads} stale={zdoStale} mismatch={schemaMismatch} ownerDrives={ownerDrives}";
+            yield return $"zdo: writes={zdoWrites} schemaWrites={schemaWrites} readsOk={zdoReads} stale={zdoStale} mismatch={schemaMismatch} ownerDrives={ownerDrives} rpcIntentsSent={rpcIntentsSent}";
 
             if (_discovery is SquadDiscovery sd)
             {
@@ -203,6 +204,11 @@ namespace FactionTactics.Squad
             PruneUnseenRuntime(seen);
             _ = _registry;
             _ambience.Tick(_active);
+#if VALHEIM_REFS
+            // 1.0.3: flush queued MemberIntent RPC batch once per tick (primary hybrid transport).
+            try { FactionTactics.Orders.IntentRpcSync.EnsureRegistered(); FactionTactics.Orders.IntentRpcSync.FlushBroadcast(); }
+            catch (System.Exception ex) { Plugin.Log?.LogDebug($"IntentRpcSync.FlushBroadcast: {ex.GetType().Name}: {ex.Message}"); }
+#endif
             MaybeLogHeartbeat(dt);
         }
 
@@ -312,6 +318,8 @@ namespace FactionTactics.Squad
             var zdoStale = 0L;
             var schemaMismatch = 0L;
             var ownerDrives = 0L;
+            var rpcIntentsSent = 0L;
+            var rpcBatchesSent = 0L;
 #if VALHEIM_REFS
             zdoIntentsWritten = FactionTactics.Orders.IntentZdoSync.Writes;
             schemaWrites = FactionTactics.Orders.IntentZdoSync.SchemaWrites;
@@ -319,6 +327,8 @@ namespace FactionTactics.Squad
             zdoStale = FactionTactics.Orders.IntentZdoSync.ReadsStale;
             schemaMismatch = FactionTactics.Orders.IntentZdoSync.SchemaMismatches;
             ownerDrives = FactionTactics.HarmonyPatches.MonsterAI_UpdateAI_Patch.OwnerDriveCount;
+            rpcIntentsSent = FactionTactics.Orders.IntentRpcSync.RpcIntentsSent;
+            rpcBatchesSent = FactionTactics.Orders.IntentRpcSync.RpcBatchesSent;
 #endif
             Plugin.Log?.LogInfo(
                 $"FactionTactics heartbeat: discovered={_lastDiscoveredCount} active={_active.Count} " +
@@ -330,7 +340,7 @@ namespace FactionTactics.Squad
                 $"enemyOwned={enemyOwned} enemyLive={enemyLive} enemyMai={enemyMai} " +
                 $"enemyServerOwned={enemyServerOwned} enemyClientOwned={enemyClientOwned} " +
                 $"enemyReclaims={enemyReclaims} stickyKeeps={stickyKeeps} stickyReclaims={stickyReclaims}" +
-                $" zdoIntentsWritten={zdoIntentsWritten} schemaWrites={schemaWrites} zdoReads={zdoReads} zdoStale={zdoStale} schemaMismatch={schemaMismatch} ownerDrives={ownerDrives}");
+                $" zdoIntentsWritten={zdoIntentsWritten} schemaWrites={schemaWrites} zdoReads={zdoReads} zdoStale={zdoStale} schemaMismatch={schemaMismatch} ownerDrives={ownerDrives} rpcIntentsSent={rpcIntentsSent} rpcBatchesSent={rpcBatchesSent}");
         }
 
         private SquadRuntimeState MatchOrCreateRuntime(SquadUnit squad)

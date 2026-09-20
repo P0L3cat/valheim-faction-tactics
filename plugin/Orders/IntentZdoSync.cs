@@ -130,6 +130,13 @@ namespace FactionTactics.Orders
             try
             {
                 var ver = zdo.GetInt(KeyVersion, 0);
+                // ver==0 means "no ZDO intent written/visible" (common when dedicated non-owner
+                // ZDO.Set never replicates). That is NOT a schema mismatch — RPC is the primary path.
+                if (ver == 0)
+                {
+                    ReadsMiss++;
+                    return false;
+                }
                 if (ver != IntentZdoCodec.SchemaVersion)
                 {
                     SchemaMismatches++;
@@ -144,7 +151,8 @@ namespace FactionTactics.Orders
                         {
                             UnityEngine.Debug.LogError(
                                 $"[FactionTactics] Intent schema mismatch (zdo={ver} local={IntentZdoCodec.SchemaVersion}). " +
-                                "Client/server packs must match — reinstall both from the same 1.0.x release.");
+                                "Client/server packs must match — reinstall both from the same 1.0.x release. " +
+                                "Note: missing ZDO fields (zdo=0) with working RPC is OK in 1.0.3+.");
                         }
                         catch { /* dedicated headless ok */ }
                     }
