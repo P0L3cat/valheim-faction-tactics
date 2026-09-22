@@ -12,6 +12,7 @@ namespace FactionTactics.Doctrine
     /// (not eternal Hold). Front HoldGround; missiles PreferKeepRange.
     /// Advance only to close into the ~14–18m wall band; Charge almost never.
     /// When PreferRanged: Charge only last-resort casualties (never default Charge).
+    /// Phase B: scored transitions + hysteresis. Wall band is <c>ft set</c>able.
     /// </summary>
     public sealed class RomanDoctrine : DoctrinePackBase
     {
@@ -24,7 +25,7 @@ namespace FactionTactics.Doctrine
         /// <summary>Legacy no-missile hold line (meters).</summary>
         public const float NoMissileHoldLine = 12f;
 
-        /// <summary>Tight hysteresis once a rare Charge is committed.</summary>
+        /// <summary>Tight band once a rare Charge is committed (meters).</summary>
         public const float ChargeCommitBand = 5f;
 
         /// <summary>Casualty ratio treated as last-resort melee commit.</summary>
@@ -61,78 +62,166 @@ namespace FactionTactics.Doctrine
 
         public override DoctrineOrderKind SelectOrder(SquadSnapshot snapshot, DoctrineOrderKind? previous)
         {
-            // Roman FSM — shield wall + archers:
-            // 1) No threat → Hold
-            // 2) Broken / very high casualties → RetreatAndReform
-            // 3) Far → Advance toward 14–18m wall band, then Hold
-            // 4) Has missiles in range → FocusFire / ProtectMissiles (never Charge)
-            // 5) Charge only if nearest < chargeBand AND (no missiles OR last-resort morale)
+            // Hard gates — not score flips. Threat lost and shattered packs leave immediately.
             if (snapshot.ThreatCount <= 0)
                 return DoctrineOrderKind.Hold;
-
             if (snapshot.IsBroken || snapshot.CasualtyRatio >= 0.45f)
                 return DoctrineOrderKind.RetreatAndReform;
 
-            var chargeBand = EffectiveChargeRange(snapshot);
-            var preferRanged = PreferRanged;
-            var hasMissiles = snapshot.CountByRole(SquadRole.Missile) > 0;
-            var d = snapshot.NearestThreatDistance;
+            var scores = ScoreOrders(snapshot, previous);
+            OrderTransition.FoldActionScorer(scores, snapshot);
+            return OrderTransition.Pick(scores, previous);
+        }
 
-            // Rare Charge hysteresis: stay committed only while still inside a tight band
-            // and still eligible for melee (no missile option / last resort).
-            if (previous == DoctrineOrderKind.Charge)
+        /// <summary>
+        /// Missile line inside the wall band. Charge is vetoed unless <see cref="ShouldCharge"/>.
+        /// Kite and Flank stay vetoed. Near the wall edges, scores compress so hysteresis
+        /// stops one-step Advance/Focus flicker.
+        /// </summary>
+        internal static Dictionary<DoctrineOrderKind, float> ScoreOrders(
+            SquadSnapshot snapshot,
+            DoctrineOrderKind? previous)
+        {
+            var scores = OrderTransition.Blank();
+            var wall = LiveWall();
+            var outer = wall.outer;
+            var inner = wall.inner;
+            var d = snapshot.NearestThreatDistance;
+            var hasMissiles = snapshot.CountByRole(SquadRole.Missile) > 0;
+            var preferRanged = PreferRanged;
+            var chargeBand = EffectiveChargeRange(snapshot);
+            var should = ShouldCharge(snapshot, hasMissiles, preferRanged, chargeBand);
+            // Commit band cannot keep a Charge that the charge gate already rejected.
+            if (should && previous == DoctrineOrderKind.Charge && d > ChargeCommitBand)
+                should = false;
+
+            if (d > outer || d > snapshot.AdvanceRange)
             {
-                if (d <= ChargeCommitBand && ShouldCharge(snapshot, hasMissiles, preferRanged, chargeBand))
-                    return DoctrineOrderKind.Charge;
-                // Drop back to wall / missile posture.
+                scores[DoctrineOrderKind.Advance] = 3.1f;
+                scores[DoctrineOrderKind.FocusFire] = hasMissiles ? 0.55f : -8f;
+                scores[DoctrineOrderKind.Hold] = 0.4f;
+                scores[DoctrineOrderKind.Charge] = -8f;
+                OrderTransition.SoftenEdge(
+                    scores,
+                    DoctrineOrderKind.Advance,
+                    hasMissiles ? DoctrineOrderKind.FocusFire : DoctrineOrderKind.Hold,
+                    d,
+                    Math.Min(outer, snapshot.AdvanceRange));
+                return scores;
             }
 
-            // Close from far into the wall band only.
-            if (d > WallOuter || d > snapshot.AdvanceRange)
-                return DoctrineOrderKind.Advance;
-
-            // Inside ~14–18m (and closer): wall + missiles — never eternal Hold while threat in range.
-            if (hasMissiles || preferRanged)
+            if (hasMissiles)
             {
-                // With missiles: prefer ProtectMissiles (Front HoldGround) over FocusFire when
-                // threat is inside the wall band; missiles PreferKeepRange / FocusFire posture.
-                if (hasMissiles)
+                var press = d <= outer
+                            && (snapshot.MissileThreatened
+                                || previous == DoctrineOrderKind.ProtectMissiles
+                                || previous == DoctrineOrderKind.FocusFire
+                                || d <= inner);
+                if (should)
                 {
-                    // Last-resort Charge only (preferRanged + missiles ⇒ almost never).
-                    if (ShouldCharge(snapshot, hasMissiles: true, preferRanged, chargeBand))
-                        return DoctrineOrderKind.Charge;
-
-                    // Threat in wall band → ProtectMissiles (Front holds line, missiles keep range).
-                    // FocusFire when still closing or missiles not yet threatened.
-                    if (d <= WallOuter
-                        && (snapshot.MissileThreatened
-                            || previous == DoctrineOrderKind.ProtectMissiles
-                            || previous == DoctrineOrderKind.FocusFire
-                            || d <= WallInner))
-                        return DoctrineOrderKind.ProtectMissiles;
-                    return DoctrineOrderKind.FocusFire;
+                    scores[DoctrineOrderKind.Charge] = 3.6f;
+                    scores[DoctrineOrderKind.ProtectMissiles] = 1.5f;
+                    scores[DoctrineOrderKind.FocusFire] = 1.2f;
+                    scores[DoctrineOrderKind.Hold] = 0.8f;
+                }
+                else
+                {
+                    scores[DoctrineOrderKind.Charge] = -8f;
+                    scores[DoctrineOrderKind.Hold] = 0.35f;
+                    if (press)
+                    {
+                        scores[DoctrineOrderKind.ProtectMissiles] = 2.8f;
+                        scores[DoctrineOrderKind.FocusFire] = 1.35f;
+                    }
+                    else
+                    {
+                        scores[DoctrineOrderKind.FocusFire] = 2.8f;
+                        scores[DoctrineOrderKind.ProtectMissiles] = 1.2f;
+                    }
                 }
 
-                // PreferRanged but no missiles left: Hold / Advance wall, Charge only last resort.
-                if (d > WallInner)
-                    return DoctrineOrderKind.Advance;
-                if (ShouldCharge(snapshot, hasMissiles: false, preferRanged, chargeBand))
-                    return DoctrineOrderKind.Charge;
-                return DoctrineOrderKind.Hold;
+                var span = Math.Max(0.01f, outer - inner);
+                scores[DoctrineOrderKind.Advance] = d > inner
+                    ? 1.05f + 0.35f * ((d - inner) / span)
+                    : 0.4f;
+                OrderTransition.SoftenEdge(scores, DoctrineOrderKind.Advance, DoctrineOrderKind.FocusFire, d, outer);
+                OrderTransition.SoftenEdge(
+                    scores,
+                    DoctrineOrderKind.FocusFire,
+                    DoctrineOrderKind.ProtectMissiles,
+                    d,
+                    inner);
+                return scores;
             }
 
-            // PreferRanged disabled: older Advance→Hold→Charge path with tight chargeBand.
-            if (!hasMissiles && d > chargeBand)
+            if (preferRanged)
+            {
+                if (should)
+                {
+                    scores[DoctrineOrderKind.Charge] = 3.5f;
+                    scores[DoctrineOrderKind.Hold] = 1.4f;
+                    scores[DoctrineOrderKind.Advance] = 0.6f;
+                }
+                else
+                {
+                    scores[DoctrineOrderKind.Charge] = -8f;
+                    if (d > inner)
+                    {
+                        scores[DoctrineOrderKind.Advance] = 2.8f;
+                        scores[DoctrineOrderKind.Hold] = 1.0f;
+                    }
+                    else
+                    {
+                        scores[DoctrineOrderKind.Hold] = 2.8f;
+                        scores[DoctrineOrderKind.Advance] = 0.55f;
+                    }
+                }
+
+                OrderTransition.SoftenEdge(scores, DoctrineOrderKind.Hold, DoctrineOrderKind.Advance, d, inner);
+                return scores;
+            }
+
+            // PreferRanged off, no missiles: Advance outside the hold line, Charge only in band.
+            scores[DoctrineOrderKind.Charge] = should ? 3.4f : -8f;
+            if (d > chargeBand)
             {
                 if (d > NoMissileHoldLine)
-                    return DoctrineOrderKind.Advance;
-                return DoctrineOrderKind.Hold;
+                {
+                    scores[DoctrineOrderKind.Advance] = 2.8f;
+                    scores[DoctrineOrderKind.Hold] = 1.0f;
+                }
+                else
+                {
+                    scores[DoctrineOrderKind.Hold] = 2.8f;
+                    scores[DoctrineOrderKind.Advance] = 0.7f;
+                }
+            }
+            else
+            {
+                scores[DoctrineOrderKind.Hold] = should ? 1.2f : 2.6f;
+                scores[DoctrineOrderKind.Advance] = 0.4f;
             }
 
-            if (ShouldCharge(snapshot, hasMissiles, preferRanged, chargeBand))
-                return DoctrineOrderKind.Charge;
+            return scores;
+        }
 
-            return DoctrineOrderKind.Hold;
+        /// <summary>Live wall from <c>ft set</c>, clamped so inner stays inside outer.</summary>
+        public static (float outer, float inner) LiveWall()
+        {
+            var outer = PluginConfig.RomanWallOuter?.Value ?? WallOuter;
+            var inner = PluginConfig.RomanWallInner?.Value ?? WallInner;
+            return ResolveWallBand(outer, inner);
+        }
+
+        public static (float outer, float inner) ResolveWallBand(float outer, float inner)
+        {
+            if (outer < 2f || float.IsNaN(outer) || float.IsInfinity(outer))
+                outer = WallOuter;
+            if (inner < 1f || float.IsNaN(inner) || float.IsInfinity(inner))
+                inner = WallInner;
+            if (inner >= outer)
+                inner = Math.Max(1f, outer - 1f);
+            return (outer, inner);
         }
 
         /// <summary>

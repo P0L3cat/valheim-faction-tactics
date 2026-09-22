@@ -74,6 +74,10 @@ namespace FactionTactics.Config
         public static ConfigEntry<float> FormationReshuffleSeconds { get; private set; } = null!;
         public static ConfigEntry<float> FormationCasualtyReshuffle { get; private set; } = null!;
         public static ConfigEntry<float> ChargeMaxSeconds { get; private set; } = null!;
+        public static ConfigEntry<float> OrderMinDwellSeconds { get; private set; } = null!;
+        public static ConfigEntry<float> OrderScoreHysteresis { get; private set; } = null!;
+        public static ConfigEntry<float> RomanWallOuter { get; private set; } = null!;
+        public static ConfigEntry<float> RomanWallInner { get; private set; } = null!;
         public static ConfigEntry<float> FlankSplitMeters { get; private set; } = null!;
         public static ConfigEntry<float> IsolateBuddyMeters { get; private set; } = null!;
         public static ConfigEntry<bool> DiscoveryBurstOnSpawn { get; private set; } = null!;
@@ -413,7 +417,31 @@ namespace FactionTactics.Config
                 "Combat",
                 "ChargeMaxSeconds",
                 4.0f,
-                "Phase A: hard cap on Charge before forced re-eval (DeathRush exempt).");
+                "Phase A/B: hard cap on Charge/FlashCharge, then re-eval (DeathRush exempt; Roman with missiles returns to ProtectMissiles).");
+
+            OrderMinDwellSeconds = config.Bind(
+                "Combat",
+                "OrderMinDwellSeconds",
+                1.25f,
+                "Phase B: minimum seconds on an order before a change. Bypassed on threat lost, broken, or Ambush Charge→Kite.");
+
+            OrderScoreHysteresis = config.Bind(
+                "Combat",
+                "OrderScoreHysteresis",
+                0.15f,
+                "Phase B: Roman/Ambush switch orders only when the new score exceeds the current by this margin.");
+
+            RomanWallOuter = config.Bind(
+                "Combat",
+                "RomanWallOuter",
+                18f,
+                "Phase B: Roman advances until the threat is inside this outer wall band (meters).");
+
+            RomanWallInner = config.Bind(
+                "Combat",
+                "RomanWallInner",
+                14f,
+                "Phase B: Roman presses the missile line once the threat is inside this inner band (meters).");
 
             FlankSplitMeters = config.Bind(
                 "Combat",
@@ -463,6 +491,7 @@ namespace FactionTactics.Config
                 AmbushAmbienceMessageCooldownSeconds, AmbushAmbiencePlayerRange, AmbushAmbienceMinSquadSize,
                 HoldAttackCooldown, HoldAttackRangeFactor, SwingStaggerMs,
                 FormationReshuffleSeconds, FormationCasualtyReshuffle, ChargeMaxSeconds,
+                OrderMinDwellSeconds, OrderScoreHysteresis, RomanWallOuter, RomanWallInner,
                 FlankSplitMeters, IsolateBuddyMeters, DiscoveryBurstOnSpawn, DiscoveryBurstSeconds);
         }
 

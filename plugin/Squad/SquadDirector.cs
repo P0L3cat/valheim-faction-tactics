@@ -137,6 +137,19 @@ namespace FactionTactics.Squad
 
         public void Tick(float dt)
         {
+            OrderScoreContext.ActionScorer = _actionScorer;
+            try
+            {
+                TickCore(dt);
+            }
+            finally
+            {
+                OrderScoreContext.ActionScorer = null;
+            }
+        }
+
+        private void TickCore(float dt)
+        {
             _active.Clear();
             var discovered = _discovery.Discover();
             _lastDiscoveredCount = discovered.Count;
@@ -193,7 +206,7 @@ namespace FactionTactics.Squad
                 }
 
                 order = MaybeRescoreOrder(order, snapshot);
-                order = ApplyChargeMaxHygiene(squad, state, order, snapshot);
+                order = ApplyOrderStability(squad, state, order, snapshot);
                 squad.CurrentOrder = order;
                 if (state.PreviousOrderKind != order.OrderKind)
                 {
@@ -482,6 +495,11 @@ namespace FactionTactics.Squad
 
         private SquadOrder MaybeRescoreOrder(SquadOrder order, SquadSnapshot snapshot)
         {
+            // Roman/Ambush fold IActionScorer into their score vector (vetoes stick)
+            // and apply OrderScoreHysteresis inside SelectOrder.
+            if (IsPhaseBScored(snapshot.DoctrineId))
+                return order;
+
             var currentScore = _actionScorer.ScoreAction(order.OrderKind, snapshot);
             if (currentScore == 0f)
                 return order; // NullScorer or no preference
@@ -507,10 +525,60 @@ namespace FactionTactics.Squad
             return order;
         }
 
+        private static bool IsPhaseBScored(string? doctrineId)
+            => string.Equals(doctrineId, "roman", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(doctrineId, "ambush", StringComparison.OrdinalIgnoreCase);
 
         /// <summary>
-        /// Phase A: hard-cap Charge duration then force Peel/reform (DeathRush exempt).
-        /// Viking/Charred already peel on previous==Charge; this catches lingerers.
+        /// Charge cap, then min dwell, then DeathRush lock. Remap formation if the kind changed
+        /// so a forced Kite/Protect is not left wearing a Charge wedge.
+        /// </summary>
+        private static SquadOrder ApplyOrderStability(
+            SquadUnit squad,
+            SquadRuntimeState state,
+            SquadOrder order,
+            SquadSnapshot snapshot)
+        {
+            var proposedKind = order.OrderKind;
+            order = ApplyChargeMaxHygiene(squad, state, order, snapshot);
+
+            var doctrineId = squad.Doctrine?.Id ?? snapshot.DoctrineId;
+            var dwelled = OrderTransition.ApplyMinDwell(
+                doctrineId,
+                snapshot,
+                state.PreviousOrderKind,
+                order.OrderKind,
+                state.OrderAgeSeconds);
+            if (dwelled != order.OrderKind)
+            {
+                order.OrderKind = dwelled;
+                order.Source = (order.Source ?? "") + "+Dwell";
+            }
+
+            var locked = OrderTransition.EnforceDeathRush(doctrineId, snapshot, order.OrderKind);
+            if (locked != order.OrderKind)
+            {
+                order.OrderKind = locked;
+                order.Source = (order.Source ?? "") + "+DeathRush";
+            }
+
+            if (order.OrderKind != proposedKind)
+            {
+                var (formation, stance) = ScriptedCommander.PresentationFor(
+                    order.OrderKind,
+                    doctrineId ?? "",
+                    order.AssaultActive);
+                order.Formation = formation;
+                order.Stance = stance;
+            }
+
+            return order;
+        }
+
+        /// <summary>
+        /// Hard-cap Charge / FlashCharge, then re-eval (DeathRush exempt — never peeled).
+        /// Ambush → Kite. Roman with missiles still up → ProtectMissiles (missile line).
+        /// Viking/Charred/others → RetreatAndReform. Jelly → FocusFire.
         /// </summary>
         private static SquadOrder ApplyChargeMaxHygiene(
             SquadUnit squad,
@@ -538,6 +606,13 @@ namespace FactionTactics.Squad
                 order.OrderKind = DoctrineOrderKind.Kite;
             else if (string.Equals(doctrineId, "artillery-jelly", StringComparison.OrdinalIgnoreCase))
                 order.OrderKind = DoctrineOrderKind.FocusFire;
+            else if (string.Equals(doctrineId, "roman", StringComparison.OrdinalIgnoreCase))
+            {
+                var missiles = snapshot.CountByRole(SquadRole.Missile) > 0;
+                order.OrderKind = missiles && !snapshot.IsBroken && snapshot.CasualtyRatio < 0.45f
+                    ? DoctrineOrderKind.ProtectMissiles
+                    : DoctrineOrderKind.RetreatAndReform;
+            }
             else
                 order.OrderKind = DoctrineOrderKind.RetreatAndReform;
             order.Source = (order.Source ?? "") + "+ChargeMax";

@@ -8,7 +8,7 @@ using FactionTactics.Orders;
 namespace FactionTactics.Client
 {
     /// <summary>
-    /// 1.0.5: full <c>ft help|get|set|reload|status</c> on pure clients.
+    /// 1.0.6: full <c>ft help|get|set|reload|status</c> on pure clients.
     /// Mutating commands RPC to dedicated (FtConfigRpc); admin-only.
     /// Skips registration when server FactionTactics.dll is also loaded (listen-host).
     /// </summary>
@@ -68,6 +68,7 @@ namespace FactionTactics.Client
                 "help", "get", "set", "reload", "status",
                 "HoldAttackCooldown", "SwingStaggerMs", "HoldAttackRangeFactor",
                 "FormationReshuffleSeconds", "FormationCasualtyReshuffle", "ChargeMaxSeconds",
+                "OrderMinDwellSeconds", "OrderScoreHysteresis", "RomanWallOuter", "RomanWallInner",
                 "FlankSplitMeters", "IsolateBuddyMeters",
                 "DiscoveryBurstOnSpawn", "DiscoveryBurstSeconds",
                 "TickIntervalSeconds", "MinSquadSize", "DiscoveryRadius",
@@ -130,8 +131,9 @@ namespace FactionTactics.Client
             args.Context.AddString($"[ft] FactionTactics.Client {ClientPlugin.PluginVersion} (admin RPC → dedicated)");
             args.Context.AddString("  ft help | get <key> | set <key> <value> | reload | status");
             args.Context.AddString("  Mutating commands apply on the dedicated server PluginConfig (persisted).");
-            args.Context.AddString("  Phase A knobs: HoldAttackCooldown, SwingStaggerMs, FormationReshuffleSeconds,");
-            args.Context.AddString("    ChargeMaxSeconds, FlankSplitMeters, IsolateBuddyMeters, DiscoveryBurst*");
+            args.Context.AddString("  Phase A/B knobs: HoldAttackCooldown, SwingStaggerMs, FormationReshuffleSeconds,");
+            args.Context.AddString("    ChargeMaxSeconds, OrderMinDwellSeconds, OrderScoreHysteresis,");
+            args.Context.AddString("    RomanWallOuter, RomanWallInner, FlankSplitMeters, IsolateBuddyMeters, DiscoveryBurst*");
             args.Context.AddString($"  Local executor tuning: HoldAttackCooldown={CombatTuning.HoldAttackCooldown} SwingStaggerMs={CombatTuning.SwingStaggerMs}");
         }
 

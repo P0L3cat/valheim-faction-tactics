@@ -68,6 +68,12 @@ namespace FactionTactics.Commander
             };
         }
 
+        internal static (FormationType formation, StanceType stance) PresentationFor(
+            DoctrineOrderKind kind,
+            string doctrineId,
+            bool assault)
+            => MapPresentation(kind, doctrineId, assault);
+
         private static (FormationType formation, StanceType stance) MapPresentation(
             DoctrineOrderKind kind,
             string doctrineId,

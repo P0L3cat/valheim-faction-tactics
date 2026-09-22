@@ -1,6 +1,6 @@
 # Smarter combat brain — whole-hog design
 
-**Status:** Phase A shipped in **1.0.5** (2026-09-19, America/Chicago). Phase B+ still design.  
+**Status:** Phase A shipped in **1.0.5** (2026-09-19). Phase B shipped in **1.0.6** (2026-09-22): order min-dwell, Roman + Ambush scored transitions, Charge re-eval. Phase C/D not implemented.  
 **Pipeline:** proven on **1.0.4** — server commander → peer-targeted `FT_MemberIntents` RPC → owning-client `CombatDriver.Drive`.  
 **Scope of this doc:** decision + actuation design. **Do not** rebuild transport. **Do not** implement or deploy from this document alone.
 
@@ -547,11 +547,20 @@ Client trusts RPC; ignore stale intents (existing stale counter). Optional: requ
 | Phase | Ship | Success criteria |
 |-------|------|------------------|
 | **A — Actuation** | Hold/ProtectMissiles attack throttle + face threat; formation slot lock; Charge/Advance hygiene; optional discovery burst | No blender spam; wall holds without grid teleport every death; faster first pack on big spawns |
-| **B — Scored FSM** | Order min-dwell; scored transitions for **Roman** + **Ambush** first; Charge flash timers | Fewer Charge/Hold flips; greys kite instead of stand-swing; Roman stays missile-line |
+| **B — Scored FSM** | **Shipped 1.0.6.** Order min-dwell; scored transitions for **Roman** + **Ambush**; Charge flash timers | Fewer Charge/Hold flips; greys kite instead of stand-swing; Roman stays missile-line |
 | **C — Roles** | Role-staggered swings; missile keep-range polish; flanker lateral slots (not centroid lattice); Siege role-split clarity | Readable formations on video; Asksvin/Ambush flankers stay mobile |
 | **D — Utility hooks** | Pluggable score hooks / route-2 prep; doctrine packs register transition utilities without rewriting RPC | New doctrine behaviors without transport changes |
 
 **Implement Phase A first** when tokens allow. Pipeline stays locked.
+
+### Phase B shipped (1.0.6)
+
+- `OrderMinDwellSeconds` (default 1.25) holds the current order before a change. Exceptions: threat lost (`ThreatCount == 0`), broken (`IsBroken`, or casualty ≥ 0.45 leaving into Retreat/Kite), and explicit force (Ambush previous Charge → Kite).
+- Roman and Ambush score candidate orders and switch only when `best > current + OrderScoreHysteresis` (default 0.15). Other doctrines keep their FSM. `IActionScorer` is added onto **legal** scores only (vetoed Charge/Kite stay vetoed). `NullScorer` changes nothing.
+- Charge/FlashCharge still hard-caps at `ChargeMaxSeconds`, then re-evals: Ambush → Kite, Roman with missiles still up → ProtectMissiles, jelly → FocusFire, others → Peel. **DeathRush never leaves Charge while a threat exists.**
+- Ambush flash, only from Flank/FocusFire inside the inner band: `TargetIsolated` OR `ThreatStaggeredOrLow` OR `FlankOpportunity` (one player in the contact band, or players split > `FlankSplitMeters`). Otherwise contact is Kite, not Hold. After every Charge, force Kite (dwell bypass). No blob Charge on first contact.
+- `ft set` keys: `OrderMinDwellSeconds`, `OrderScoreHysteresis`, `RomanWallOuter` (18), `RomanWallInner` (14). `ChargeMaxSeconds` was already settable.
+- Phase C/D (role stagger, flanker slots, pluggable utilities beyond the existing scorer hook) are not in this build.
 
 ---
 
@@ -661,4 +670,4 @@ Ship those four; current doctrines will already feel better.
 - [x] Client admin `ft` RPC (`FT_ConfigCmd`) — **1.0.5**
 - [ ] Video: Skeleton wall, Greydwarf orbit, Draugr crypt, Greyling rush
 
-**Phase A shipped in 1.0.5** (2026-09-19). Phase B scored FSM only after videos look right.
+**Phase A shipped in 1.0.5** (2026-09-19). **Phase B shipped in 1.0.6** (dwell, hysteresis, Roman + Ambush scores, flank-opportunity flash). Phase C/D not started.

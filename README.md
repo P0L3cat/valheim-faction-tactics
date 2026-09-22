@@ -1,10 +1,10 @@
 # Faction Tactics
 
-**1.0.5 hybrid (Phase A):** server commander (`FactionTactics.dll`) + client executor (`FactionTactics.Client.dll`).
+**1.0.6 hybrid (Phase B):** server commander (`FactionTactics.dll`) + client executor (`FactionTactics.Client.dll`). Phase A (swing gate, slot lock, Charge cap) stays. Phase B adds order min-dwell and scored Roman/Ambush transitions so Charge/Hold chatters less, greys kite after a flash, and skeletons keep the missile line.
 
-## Quick install (1.0.5)
+## Quick install (1.0.6)
 
-Admin console: `ft help` / `ft set <key> <value>` on dedicated, listen-host, **or client F5 as admin** (RPC to dedicated — see `docs/CONSOLE-KNOBS.md`). Phase A: swing gate, slot lock, Charge hygiene.
+Admin console: `ft help` / `ft set <key> <value>` on dedicated, listen-host, **or client F5 as admin** (RPC to dedicated — see `docs/CONSOLE-KNOBS.md`). Phase B knobs: `OrderMinDwellSeconds`, `OrderScoreHysteresis`, `RomanWallOuter`, `RomanWallInner`, `ChargeMaxSeconds`.
 
 
 1. **Server:** unzip `dist/FactionTactics-Server.zip` → `BepInEx/plugins/FactionTactics.dll`

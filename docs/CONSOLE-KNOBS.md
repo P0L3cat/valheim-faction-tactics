@@ -1,4 +1,4 @@
-# Faction Tactics console knobs (1.0.5)
+# Faction Tactics console knobs (1.0.6)
 
 Admin / dedicated / listen-host **Terminal** commands to tweak live `PluginConfig` without redeploying DLLs.
 
@@ -94,8 +94,26 @@ Listen-host (server DLL present) still uses the local `ft` command (no RPC). Pur
 | `SwingStaggerMs` | 75 | Per-slot stagger (ms) |
 | `FormationReshuffleSeconds` | 3.0 | Slot lock lifetime before lattice rebuild |
 | `FormationCasualtyReshuffle` | 0.25 | Casualty delta that forces reshuffle |
-| `ChargeMaxSeconds` | 4.0 | Hard cap on Charge (DeathRush exempt) |
+| `ChargeMaxSeconds` | 4.0 | Hard cap on Charge/FlashCharge, then re-eval (DeathRush exempt) |
 | `FlankSplitMeters` | 12 | Players farther apart → FlankOpportunity |
 | `IsolateBuddyMeters` | 8 | No buddy within this → TargetIsolated |
 | `DiscoveryBurstOnSpawn` | true | Fast ticks on candidate spike |
 | `DiscoveryBurstSeconds` | 0.2 | Burst tick interval |
+
+### Phase B combat knobs
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `OrderMinDwellSeconds` | 1.25 | Min time on an order before a change. Skipped on threat lost, broken, or Ambush Charge→Kite |
+| `OrderScoreHysteresis` | 0.15 | Roman/Ambush need this much score lead to leave the current order |
+| `RomanWallOuter` | 18 | Roman advances until the threat is inside this band (meters) |
+| `RomanWallInner` | 14 | Roman missile line / press once inside this band (meters) |
+| `ChargeMaxSeconds` | 4.0 | Already in Phase A. Roman with live missiles re-evals to ProtectMissiles; Ambush to Kite |
+
+```
+ft set OrderMinDwellSeconds 1.25
+ft set OrderScoreHysteresis 0.15
+ft set RomanWallOuter 18
+ft set RomanWallInner 14
+ft get ChargeMaxSeconds
+```
