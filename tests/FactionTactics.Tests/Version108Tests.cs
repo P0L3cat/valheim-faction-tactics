@@ -157,12 +157,17 @@ namespace FactionTactics.Tests
             });
             Assert.Equal(101, state.StickyPlayerId);
 
-            // 15m closer — switch.
-            OrderApplicator.UpdateAmbushStickyAnchor(state, centroid, new List<(long, Vector3)>
+            // 15m closer — still sticky until AmbushStickySwitchDwellSeconds elapses.
+            PluginConfig.AmbushStickySwitchDwellSeconds.Value = 1.0f;
+            var closer = new List<(long, Vector3)>
             {
                 (101, new Vector3(20f, 0f, 0f)),
                 (404, new Vector3(5f, 0f, 0f)),
-            });
+            };
+            OrderApplicator.UpdateAmbushStickyAnchor(state, centroid, closer, 0.5f);
+            Assert.Equal(101, state.StickyPlayerId);
+            // Second half-second completes 1.0s dwell → switch.
+            OrderApplicator.UpdateAmbushStickyAnchor(state, centroid, closer, 0.5f);
             Assert.Equal(404, state.StickyPlayerId);
         }
 

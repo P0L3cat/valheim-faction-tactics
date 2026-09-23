@@ -101,6 +101,7 @@ namespace FactionTactics.Config
         public static ConfigEntry<float> AmbushInnerBand { get; private set; } = null!;
         public static ConfigEntry<float> AmbushReEncircleGap { get; private set; } = null!;
         public static ConfigEntry<float> AmbushAnchorHysteresis { get; private set; } = null!;
+        public static ConfigEntry<float> AmbushStickySwitchDwellSeconds { get; private set; } = null!;
 
 
         private static readonly object BindGate = new object();
@@ -381,6 +382,13 @@ namespace FactionTactics.Config
                 "Ambush sticky player: switch orbit anchor only when a new nearest player is this many meters closer "
                 + "(or sticky dead/out of range). Prevents orbit flap between nearby players.");
 
+            AmbushStickySwitchDwellSeconds = config.Bind(
+                "Doctrine",
+                "AmbushStickySwitchDwellSeconds",
+                1.0f,
+                "Ambush sticky player: require the hysteresis+ closer alternate to stay closer for this many seconds "
+                + "before switching. Single-tick spikes do not steal sticky. Invalid/dead/OOR sticky still switches immediately.");
+
             EnableAmbushAmbienceTemp = config.Bind(
                 "AmbushAmbienceTemp",
                 "EnableAmbushAmbienceTemp",
@@ -578,7 +586,7 @@ namespace FactionTactics.Config
             Register(
                 EnablePlugin, TickIntervalSeconds, MinSquadSize, DiscoveryRadius, SquadClusterRadius, SquadMergeRadius, FormUpMagnetDistance,
                 EnableRoman, RomanChargeRange, RomanPreferRanged,
-                EnableAmbush, AmbushOuterPocket, AmbushInnerBand, AmbushReEncircleGap, AmbushAnchorHysteresis,
+                EnableAmbush, AmbushOuterPocket, AmbushInnerBand, AmbushReEncircleGap, AmbushAnchorHysteresis, AmbushStickySwitchDwellSeconds,
                 EnableDeathRush, EnableDeathRushScream, DeathRushScreamCooldownSeconds, DeathRushMinSquadSize,
                 EnableVikingShieldWall, EnableSteppe, EnableInsectSiege, EnableCharredLegion,
                 EnablePackHunters, EnableArtilleryJelly, EnableTrollSynergy, TrollSynergyRange,

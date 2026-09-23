@@ -30,7 +30,7 @@ Next play feels like a classic RTS **from one unit's POV**. Packs act as units. 
 ## Mountain order (Nate lock 2026-09-22)
 
 1. **Pack-as-Unit** (1.0.9) — whole squad = one body  
-2. **Theater Commander** (1.0.10+) — multi-squad battle awareness  
+2. **Theater Commander** (1.0.11+) — multi-squad battle awareness  
 3. **Doctrine Spectacle** — readable identity plays  
 4. **Pressure Economy** — threat that breathes with the player  
 5. **Living War** (1.0.13 / possible 1.1.0 rename by Nate) — integration polish
@@ -47,7 +47,7 @@ PreferRun default, straggler merge (`SquadMergeRadius` 40), Ambush sticky player
 
 **Playtest:** Romans run into FormUp; scattered skeletons join the wall; Greydwarfs orbit **you**.
 
-### 1.0.9 — Pack-as-Unit (HUGE stride) ← cooking/shipped
+### 1.0.9 — Pack-as-Unit (HUGE stride) ← SHIPPED
 
 North star: every squad moves as **ONE BODY**.
 
@@ -59,21 +59,27 @@ North star: every squad moves as **ONE BODY**.
 
 **Acceptance:** A 20–25 skeleton spawn forms one readable wall that jogs into slots together. Greydwarf pack orbits you as a ring-unit, not a huddle.
 
-### 1.0.10 — Theater Commander
+### 1.0.10 — Ambush sticky dwell + Narvi suite ← this cook
+
+Sustained hysteresis breach for Ambush sticky player switching (`AmbushStickySwitchDwellSeconds` default 1.0s). Single-tick spikes do not steal sticky; invalid/dead/OOR still switches immediately. Narvi player-path + Pack-as-Unit edge tests merged green.
+
+**Note:** Theater Commander cook was still in flight on Bazzite at ship time — promoted to 1.0.11 so sticky dwell could land without blocking.
+
+### 1.0.11 — Theater Commander
 
 Multi-squad awareness: don't all freeze/huddle the same; assign complementary jobs (pin / flank / reserve); readable order dwell; no global brain dump.
 
-### 1.0.11 — Doctrine Spectacle
+### 1.0.12 — Doctrine Spectacle
 
 Each doctrine's "set piece" is unmistakable: Roman line press, Ambush orbit tempo (phase angle advances), Viking choke mirror, DeathRush bee-line. Facing / keep-distance polish so formations *read*.
 
-### 1.0.12 — Pressure Economy
+### 1.0.13 — Pressure Economy
 
 Contact pressure that feels like an RTS engagement: Approach→Press as one unit; Ambush kite→re-encircle without huddle; breathe with player positioning; no spawn hikes.
 
-### 1.0.13 — Living War (ship candidate)
+### 1.0.14 — Living War (ship candidate)
 
-Integration polish, regress tests for 8–12, knob defaults tuned for RTS POV, changelog/README ready for possible Nate rename to 1.1.0 (cook leaves version at 1.0.13).
+Integration polish, regress tests for 8–13, knob defaults tuned for RTS POV, changelog/README ready for possible Nate rename to 1.1.0 (cook leaves version at 1.0.14).
 
 ---
 

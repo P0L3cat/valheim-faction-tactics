@@ -214,7 +214,7 @@ namespace FactionTactics.Tests.Sim
 
                 var players = SamplePlayers(t, i);
                 var centroid = ComputeCentroid(_squad);
-                OrderApplicator.UpdateAmbushStickyAnchor(_runtime, centroid, players);
+                OrderApplicator.UpdateAmbushStickyAnchor(_runtime, centroid, players, _dt);
 
                 var order = _orderProvider != null ? _orderProvider(this, t, i) : _order;
                 _order = order;
@@ -247,7 +247,7 @@ namespace FactionTactics.Tests.Sim
                 var players = SamplePlayers(t, i);
                 var centroid = fixedCentroid
                     ?? (_squad != null ? ComputeCentroid(_squad) : Vector3.zero);
-                OrderApplicator.UpdateAmbushStickyAnchor(_runtime, centroid, players);
+                OrderApplicator.UpdateAmbushStickyAnchor(_runtime, centroid, players, _dt);
 
                 var m = new TickMetrics
                 {

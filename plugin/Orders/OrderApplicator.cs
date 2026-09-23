@@ -676,17 +676,27 @@ namespace FactionTactics.Orders
 
 
         /// <summary>
-        /// 1.0.8 Ambush sticky player anchor with hysteresis.
-        /// Switch only when a new nearest is AmbushAnchorHysteresis meters closer, or sticky missing/OOR.
+        /// Ambush sticky player anchor: hysteresis + sustained dwell.
+        /// Switch only when a new nearest is AmbushAnchorHysteresis meters closer for
+        /// AmbushStickySwitchDwellSeconds continuously, or sticky missing/dead/OOR (immediate).
         /// </summary>
+        /// <param name="deltaTime">
+        /// Seconds since last update. Null uses TickIntervalSeconds (live Apply path).
+        /// Sims should pass their own dt so dwell matches wall-clock of the sim.
+        /// </param>
         public static void UpdateAmbushStickyAnchor(
             SquadRuntimeState state,
             Vector3 squadCentroid,
-            System.Collections.Generic.IReadOnlyList<(long id, Vector3 pos)>? players = null)
+            System.Collections.Generic.IReadOnlyList<(long id, Vector3 pos)>? players = null,
+            float? deltaTime = null)
         {
             var hysteresis = PluginConfig.AmbushAnchorHysteresis?.Value ?? 10f;
+            var dwellSeconds = PluginConfig.AmbushStickySwitchDwellSeconds?.Value ?? 1.0f;
+            if (dwellSeconds < 0f) dwellSeconds = 0f;
             var outer = PluginConfig.AmbushOuterPocket?.Value ?? 18f;
             var maxRange = System.Math.Max(outer * 2f, PluginConfig.DiscoveryRadius?.Value ?? 64f);
+            var dt = deltaTime ?? (PluginConfig.TickIntervalSeconds?.Value ?? 0.75f);
+            if (dt < 0f) dt = 0f;
 
             var candidates = new System.Collections.Generic.List<(long id, Vector3 pos)>();
             if (players != null && players.Count > 0)
@@ -716,6 +726,8 @@ namespace FactionTactics.Orders
             {
                 // Keep last sticky so Ambush can still orbit a known player while scanners are empty
                 // (unit tests + brief dedicated gaps). Live refresh happens when candidates reappear.
+                // Pending switch cannot progress without candidates.
+                ClearStickySwitchCandidate(state);
                 return;
             }
 
@@ -735,9 +747,7 @@ namespace FactionTactics.Orders
 
             if (!state.HasStickyPlayer)
             {
-                state.HasStickyPlayer = true;
-                state.StickyPlayerId = nearestId;
-                state.StickyPlayerPosition = nearestPos;
+                CommitSticky(state, nearestId, nearestPos);
                 return;
             }
 
@@ -755,20 +765,49 @@ namespace FactionTactics.Orders
                 }
             }
 
+            // Immediate switch when sticky invalid/dead/out of range.
             if (!stickyAlive || stickyDist > maxRange)
             {
-                state.StickyPlayerId = nearestId;
-                state.StickyPlayerPosition = nearestPos;
-                state.HasStickyPlayer = true;
+                CommitSticky(state, nearestId, nearestPos);
                 return;
             }
 
             state.StickyPlayerPosition = stickyPos;
-            if (nearestId != state.StickyPlayerId && nearestDist + 0.01f < stickyDist - hysteresis)
+
+            bool hysteresisBreach = nearestId != state.StickyPlayerId
+                && nearestDist + 0.01f < stickyDist - hysteresis;
+
+            if (!hysteresisBreach)
             {
-                state.StickyPlayerId = nearestId;
-                state.StickyPlayerPosition = nearestPos;
+                ClearStickySwitchCandidate(state);
+                return;
             }
+
+            // Sustained closer: accumulate dwell on the same candidate; reset on candidate change.
+            if (state.StickySwitchCandidateId != nearestId)
+            {
+                state.StickySwitchCandidateId = nearestId;
+                state.StickySwitchCandidateSeconds = 0f;
+            }
+
+            state.StickySwitchCandidateSeconds += dt;
+
+            if (state.StickySwitchCandidateSeconds + 1e-4f >= dwellSeconds)
+                CommitSticky(state, nearestId, nearestPos);
+        }
+
+        private static void CommitSticky(SquadRuntimeState state, long id, Vector3 pos)
+        {
+            state.HasStickyPlayer = true;
+            state.StickyPlayerId = id;
+            state.StickyPlayerPosition = pos;
+            ClearStickySwitchCandidate(state);
+        }
+
+        private static void ClearStickySwitchCandidate(SquadRuntimeState state)
+        {
+            state.StickySwitchCandidateId = 0;
+            state.StickySwitchCandidateSeconds = 0f;
         }
 
         private static bool Contains(string? name, string token)

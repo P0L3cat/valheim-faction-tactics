@@ -72,6 +72,15 @@ namespace FactionTactics.Squad
 
         /// <summary>True once a sticky Ambush player anchor has been acquired.</summary>
         public bool HasStickyPlayer { get; set; }
+
+        /// <summary>
+        /// Candidate sticky id under hysteresis+ breach awaiting AmbushStickySwitchDwellSeconds.
+        /// 0 = no pending switch.
+        /// </summary>
+        public long StickySwitchCandidateId { get; set; }
+
+        /// <summary>Seconds the current StickySwitchCandidateId has been continuously closer by hysteresis.</summary>
+        public float StickySwitchCandidateSeconds { get; set; }
     }
 
     /// <summary>Builds stable squad keys and matches clusters across ticks by member-id overlap.</summary>

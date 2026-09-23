@@ -632,8 +632,8 @@ namespace FactionTactics.Tests
             for (int i = 0; i < 40; i++)
             {
                 var players = simMover.SamplePlayers(t, i);
-                OrderApplicator.UpdateAmbushStickyAnchor(runtimeA, centroidA, players);
-                OrderApplicator.UpdateAmbushStickyAnchor(runtimeB, centroidB, players);
+                OrderApplicator.UpdateAmbushStickyAnchor(runtimeA, centroidA, players, 0.5f);
+                OrderApplicator.UpdateAmbushStickyAnchor(runtimeB, centroidB, players, 0.5f);
                 histA.Add(new TickMetrics
                 {
                     TickIndex = i,
@@ -761,15 +761,15 @@ namespace FactionTactics.Tests
                 + "— magnet Desired not translating into chase");
         }
 
-                /// <summary>
+        /// <summary>
         /// Hard regression: a single-tick hysteresis+ spike must not permanently steal sticky
-        /// without dwell. Current 1.0.8 switches instantly — this documents the gap.
-        /// Do NOT weaken; either add dwell to UpdateAmbushStickyAnchor or leave failing-first.
+        /// without AmbushStickySwitchDwellSeconds. Sustained closer still switches (see Version108).
         /// </summary>
         [Fact]
         public void Sticky_requires_sustained_hysteresis_breach_not_single_spike()
         {
             PluginConfig.AmbushAnchorHysteresis.Value = 10f;
+            PluginConfig.AmbushStickySwitchDwellSeconds.Value = 1.0f;
             var state = new SquadRuntimeState();
             var centroid = Vector3.zero;
 
