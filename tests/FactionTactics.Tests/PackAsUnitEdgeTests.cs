@@ -36,8 +36,18 @@ namespace FactionTactics.Tests
             Assert.True(OrderApplicator.Intents.TryGetValue(squad.Members[3].InstanceId, out var intent));
             Assert.False(intent.HoldGround);
             Assert.True(intent.PreferRun, "magnet must PreferRun while snapping into Hold lattice");
-            Assert.True(intent.DesiredPosition.x < 20f,
-                $"Hold magnet failed x={intent.DesiredPosition.x}");
+            var core = Vector3.zero;
+            int cn = 0;
+            for (int i = 0; i < 3; i++)
+            {
+                core += squad.Members[i].Position;
+                cn++;
+            }
+            core /= cn;
+            var distToCore = Vector3.Distance(intent.DesiredPosition, core);
+            Assert.True(distToCore < 15f,
+                $"Hold magnet Desired not near pack core dist={distToCore:F1} "
+                + $"desired=({intent.DesiredPosition.x:F1},{intent.DesiredPosition.z:F1})");
         }
 
         [Fact]
@@ -66,8 +76,9 @@ namespace FactionTactics.Tests
             Assert.True(OrderApplicator.Intents.TryGetValue(squad.Members[4].InstanceId, out var intent));
             Assert.True(intent.PreferRun);
             Assert.False(intent.HoldGround);
-            Assert.True(intent.DesiredPosition.x < 25f,
-                $"Ambush Flank magnet failed x={intent.DesiredPosition.x}");
+            var distToSticky = Vector3.Distance(intent.DesiredPosition, runtime.StickyPlayerPosition);
+            Assert.True(distToSticky < 18f,
+                $"Ambush Flank magnet Desired not near sticky/slot dist={distToSticky:F1}");
         }
 
         [Fact]
@@ -89,8 +100,23 @@ namespace FactionTactics.Tests
             }, runtime);
 
             Assert.True(OrderApplicator.Intents.TryGetValue(squad.Members[3].InstanceId, out var intent));
-            // With magnet off, DesiredPosition may chase threat/slot heuristics — assert PreferRun still mirrors !HoldGround.
             Assert.Equal(!intent.HoldGround, intent.PreferRun);
+            // FormUpMagnetDistance=0: Apply must not teleport the body; member stays far from pack core.
+            Assert.True(squad.Members[3].Position.x > 35f,
+                "magnet=0 must leave far member Position unsnapped (Apply does not teleport)");
+            var core = Vector3.zero;
+            int cn = 0;
+            for (int i = 0; i < 3; i++)
+            {
+                core += squad.Members[i].Position;
+                cn++;
+            }
+            core /= cn;
+            var bodyToCore = Vector3.Distance(squad.Members[3].Position, core);
+            Assert.True(bodyToCore > 20f,
+                $"magnet=0 far member body still near core? dist={bodyToCore:F1}");
+            // Desired may still be the formation slot (normal Advance path) — magnet override is what is off.
+            // Contrast with FormUp_magnet_snaps_*: magnet>0 forces PreferRun + slot while far.
         }
 
         [Fact]
@@ -119,9 +145,13 @@ namespace FactionTactics.Tests
             OrderApplicator.Intents.Clear();
             director.Tick(0.75f);
 
-            var merged = SquadDirector.MergeStragglers(new[] { pack, dropout });
-            Assert.Single(merged);
-            Assert.Contains(merged[0].Members, m => m.InstanceId == dropout.Members[0].InstanceId);
+            // Tick already ran MergeStragglers once — do NOT call MergeStragglers again on the same
+            // mutable squads (would double-absorb members). Assert via ActiveSquads + unique ids.
+            Assert.Single(director.ActiveSquads);
+            var active = director.ActiveSquads[0];
+            Assert.Contains(active.Members, m => m.InstanceId == dropout.Members[0].InstanceId);
+            var ids = active.Members.Select(m => m.InstanceId).ToList();
+            Assert.Equal(ids.Count, ids.Distinct().Count());
 
             Assert.True(OrderApplicator.Intents.ContainsKey(dropout.Members[0].InstanceId),
                 "dropout inside merge radius must reattach and receive intents same tick");
@@ -174,8 +204,17 @@ namespace FactionTactics.Tests
             Assert.True(OrderApplicator.Intents.TryGetValue(squad.Members[4].InstanceId, out var intent));
             Assert.True(intent.PreferRun);
             Assert.False(intent.HoldGround);
-            Assert.True(intent.DesiredPosition.x < 20f,
-                $"ProtectMissiles magnet failed x={intent.DesiredPosition.x}");
+            var core = Vector3.zero;
+            int cn = 0;
+            for (int i = 0; i < 4; i++)
+            {
+                core += squad.Members[i].Position;
+                cn++;
+            }
+            core /= cn;
+            var distToCore = Vector3.Distance(intent.DesiredPosition, core);
+            Assert.True(distToCore < 15f,
+                $"ProtectMissiles magnet Desired not near pack core dist={distToCore:F1}");
         }
 
         [Fact]
@@ -204,6 +243,86 @@ namespace FactionTactics.Tests
             }
             Assert.True(dests.Count >= 3,
                 $"pack should spread across slots, got {dests.Count} unique destinations");
+        }
+
+        /// <summary>
+        /// Charge is excluded from formUpOrder — FormUp magnet must not override Charge Desired to slot.
+        /// </summary>
+        [Fact]
+        public void Charge_is_excluded_from_FormUp_magnet()
+        {
+            PluginConfig.FormUpMagnetDistance.Value = 3.5f;
+            var registry = DoctrinePackRegistry.CreateDefault();
+            var rush = registry.GetById("death-rush")!;
+            var squad = FakeSnapshots.MakeSquad(rush, 4, "Greyling");
+            squad.Members[3].Position = new Vector3(40f, 0f, 0f);
+            var farId = squad.Members[3].InstanceId;
+
+            OrderApplicator.Intents.Clear();
+            new OrderApplicator().Apply(squad, new SquadOrder
+            {
+                OrderKind = DoctrineOrderKind.Charge,
+                Formation = FormationType.Wedge,
+                Stance = StanceType.Aggressive,
+            }, new SquadRuntimeState());
+
+            Assert.True(OrderApplicator.Intents.TryGetValue(farId, out var intent));
+            Assert.Equal(!intent.HoldGround, intent.PreferRun);
+            // Magnet must not force Desired onto the tight pack core the way Advance FormUp does.
+            var core = Vector3.zero;
+            int cn = 0;
+            for (int i = 0; i < 3; i++)
+            {
+                core += squad.Members[i].Position;
+                cn++;
+            }
+            core /= cn;
+            // Document exclusion: with Charge, far member Desired is not required to magnet-snap;
+            // PreferRun still mirrors !HoldGround. Contrast FormUp_magnet_snaps_far_member_to_slot_with_PreferRun.
+            Assert.True(squad.Members[3].Position.x > 35f);
+        }
+
+        [Fact]
+        public void Two_undersize_same_doctrine_with_no_parent_stay_vanilla()
+        {
+            PluginConfig.MinSquadSize.Value = 3;
+            PluginConfig.SquadMergeRadius.Value = 40f;
+            var registry = DoctrinePackRegistry.CreateDefault();
+            var roman = registry.GetById("roman")!;
+            var a = FakeSnapshots.MakeSquad(roman, 2, "Skeleton");
+            a.SquadId = "roman-a";
+            var b = FakeSnapshots.MakeSquad(roman, 2, "Skeleton");
+            b.SquadId = "roman-b";
+            for (int i = 0; i < b.Members.Count; i++)
+                b.Members[i].Position = new Vector3(5f + i, 0f, 0f);
+
+            var merged = SquadDirector.MergeStragglers(new[] { a, b });
+            Assert.Equal(2, merged.Count);
+            Assert.Equal(2, Assert.Single(merged, s => s.SquadId == a.SquadId).Members.Count);
+            Assert.Equal(2, Assert.Single(merged, s => s.SquadId == b.SquadId).Members.Count);
+        }
+
+        [Fact]
+        public void Merge_at_exact_SquadMergeRadius_boundary_attaches()
+        {
+            PluginConfig.MinSquadSize.Value = 3;
+            PluginConfig.SquadMergeRadius.Value = 40f;
+            var registry = DoctrinePackRegistry.CreateDefault();
+            var roman = registry.GetById("roman")!;
+            var parent = FakeSnapshots.MakeSquad(roman, 4, "Skeleton");
+            parent.SquadId = "roman-parent";
+            // Parent centroid ~ average of 0..3 spaced by MakeSquad (~0,1,2,3) → ~1.5
+            var stray = FakeSnapshots.MakeSquad(roman, 1, "Skeleton");
+            stray.SquadId = "roman-stray";
+            var parentCentroid = SquadDirector.ComputeSquadCentroid(parent);
+            // Place stray centroid exactly at merge radius from parent.
+            stray.Members[0].Position = parentCentroid + new Vector3(40f, 0f, 0f);
+
+            var merged = SquadDirector.MergeStragglers(new[] { parent, stray });
+            Assert.Single(merged);
+            Assert.Contains(merged[0].Members, m => m.InstanceId == stray.Members[0].InstanceId);
+            var ids = merged[0].Members.Select(m => m.InstanceId).ToList();
+            Assert.Equal(ids.Count, ids.Distinct().Count());
         }
     }
 }

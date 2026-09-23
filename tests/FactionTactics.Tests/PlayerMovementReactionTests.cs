@@ -762,14 +762,15 @@ namespace FactionTactics.Tests
         }
 
         /// <summary>
-        /// Hard regression: a single-tick hysteresis+ spike must not permanently steal sticky
-        /// without AmbushStickySwitchDwellSeconds. Sustained closer still switches (see Version108).
+        /// Hard regression: hysteresis+ closer must use explicit dt (not null→TickInterval);
+        /// interrupted dwell and mid-dwell candidate change reset; sustained still switches.
         /// </summary>
         [Fact]
         public void Sticky_requires_sustained_hysteresis_breach_not_single_spike()
         {
             PluginConfig.AmbushAnchorHysteresis.Value = 10f;
             PluginConfig.AmbushStickySwitchDwellSeconds.Value = 1.0f;
+            const float dt = 0.25f;
             var state = new SquadRuntimeState();
             var centroid = Vector3.zero;
 
@@ -777,27 +778,62 @@ namespace FactionTactics.Tests
             {
                 (101, new Vector3(20f, 0f, 0f)),
                 (202, new Vector3(25f, 0f, 0f)),
-            });
+            }, dt);
             Assert.Equal(101L, state.StickyPlayerId);
 
-            // Single-tick spike: B 15m closer.
+            // Interrupted dwell: B closer for one tick then retreats — must clear candidate.
             OrderApplicator.UpdateAmbushStickyAnchor(state, centroid, new List<(long, Vector3)>
             {
                 (101, new Vector3(20f, 0f, 0f)),
                 (202, new Vector3(5f, 0f, 0f)),
-            });
+            }, dt);
+            Assert.Equal(101L, state.StickyPlayerId);
+            Assert.Equal(202L, state.StickySwitchCandidateId);
+            Assert.True(state.StickySwitchCandidateSeconds > 0f);
 
-            // B retreats next tick.
             OrderApplicator.UpdateAmbushStickyAnchor(state, centroid, new List<(long, Vector3)>
             {
                 (101, new Vector3(20f, 0f, 0f)),
                 (202, new Vector3(22f, 0f, 0f)),
-            });
+            }, dt);
+            Assert.Equal(101L, state.StickyPlayerId);
+            Assert.Equal(0L, state.StickySwitchCandidateId);
+            Assert.Equal(0f, state.StickySwitchCandidateSeconds);
 
-            Assert.True(state.StickyPlayerId == 101L,
-                $"INVARIANT GAP: single-tick hysteresis spike stole sticky "
-                + $"(now StickyPlayerId={state.StickyPlayerId}, expected 101). "
-                + "UpdateAmbushStickyAnchor needs sustained-closer dwell, not instant switch.");
+            // Mid-dwell candidate change: arm on B, then C becomes nearer — dwell resets to C.
+            for (int i = 0; i < 3; i++)
+            {
+                OrderApplicator.UpdateAmbushStickyAnchor(state, centroid, new List<(long, Vector3)>
+                {
+                    (101, new Vector3(20f, 0f, 0f)),
+                    (202, new Vector3(5f, 0f, 0f)),
+                }, dt);
+            }
+            Assert.Equal(101L, state.StickyPlayerId);
+            Assert.Equal(202L, state.StickySwitchCandidateId);
+            Assert.True(state.StickySwitchCandidateSeconds >= 0.75f - 1e-3f);
+
+            OrderApplicator.UpdateAmbushStickyAnchor(state, centroid, new List<(long, Vector3)>
+            {
+                (101, new Vector3(20f, 0f, 0f)),
+                (202, new Vector3(8f, 0f, 0f)),
+                (303, new Vector3(4f, 0f, 0f)),
+            }, dt);
+            Assert.Equal(101L, state.StickyPlayerId);
+            Assert.Equal(303L, state.StickySwitchCandidateId);
+            Assert.True(state.StickySwitchCandidateSeconds <= dt + 1e-3f,
+                "candidate change must reset dwell accumulation");
+
+            // Sustained C for full dwell from reset → one switch.
+            for (int i = 0; i < 4; i++)
+            {
+                OrderApplicator.UpdateAmbushStickyAnchor(state, centroid, new List<(long, Vector3)>
+                {
+                    (101, new Vector3(20f, 0f, 0f)),
+                    (303, new Vector3(4f, 0f, 0f)),
+                }, dt);
+            }
+            Assert.Equal(303L, state.StickyPlayerId);
         }
 
         private static SquadUnit CloneSquad(SquadUnit src, string squadId)

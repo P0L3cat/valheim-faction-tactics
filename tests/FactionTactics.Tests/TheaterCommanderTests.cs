@@ -165,7 +165,16 @@ namespace FactionTactics.Tests
                 Assert.Equal(TheaterRole.Flank, challenger.State.TheaterRole);
                 Assert.Equal(0f, holder.State.TheaterRoleAgeSeconds);
 
-                TheaterCommander.Assign(new[] { holder, challenger }, 2.5f);
+                // Multi-tick age accumulate: Assign(0.5) × N until dwell (2.5s) elapses.
+                for (int i = 0; i < 4; i++)
+                {
+                    TheaterCommander.Assign(new[] { holder, challenger }, 0.5f);
+                    Assert.Equal(TheaterRole.Pin, holder.State.TheaterRole);
+                    Assert.Equal(TheaterRole.Flank, challenger.State.TheaterRole);
+                    Assert.True(holder.State.TheaterRoleAgeSeconds > 0f);
+                }
+                // Fifth 0.5s tick pushes age past 2.5 dwell → pin may swap.
+                TheaterCommander.Assign(new[] { holder, challenger }, 0.5f);
                 Assert.Equal(TheaterRole.Flank, holder.State.TheaterRole);
                 Assert.Equal(TheaterRole.Pin, challenger.State.TheaterRole);
             }

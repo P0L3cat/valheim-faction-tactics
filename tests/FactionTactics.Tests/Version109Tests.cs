@@ -35,9 +35,19 @@ namespace FactionTactics.Tests
             Assert.True(OrderApplicator.Intents.TryGetValue(squad.Members[3].InstanceId, out var intent));
             Assert.False(intent.HoldGround);
             Assert.True(intent.PreferRun);
-            // Desired position should be near the formation (centroid ~3), not stay at x=40.
-            Assert.True(intent.DesiredPosition.x < 20f,
-                $"far member not magnetized into formation x={intent.DesiredPosition.x}");
+            // Desired near pack core / slot — not soft Desired.x < 20.
+            var core = Vector3.zero;
+            int cn = 0;
+            for (int i = 0; i < 3; i++)
+            {
+                core += squad.Members[i].Position;
+                cn++;
+            }
+            core /= cn;
+            var distToCore = Vector3.Distance(intent.DesiredPosition, core);
+            Assert.True(distToCore < 15f,
+                $"far member Desired not near pack core dist={distToCore:F1} "
+                + $"desired=({intent.DesiredPosition.x:F1},{intent.DesiredPosition.z:F1})");
         }
 
         [Fact]

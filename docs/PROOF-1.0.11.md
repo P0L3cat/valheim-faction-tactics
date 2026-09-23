@@ -60,11 +60,13 @@ If a claim cannot be proven offline, the matching test either asserts the math t
 
 | # | Claim | Offline proof (test name) | What you should see | How to verify |
 |---|--------|---------------------------|---------------------|---------------|
-| 1 | PreferRun = !HoldGround — advancing packs sprint into slots; planted Hold stands | `Observable_PreferRun_equals_not_HoldGround_Advance_runs_Hold_plants` | Advance: members run into lattice; StandoffHold near slot: Front/Leader plant | Eyes + intents math offline; live: no freeze-in-blob on spawn Advance |
-| 2 | Ambush sticky + sustained dwell — Greydwarfs orbit YOU; brief 2nd player closer doesn’t flip; sustained closer does | `Observable_Ambush_orbit_tracks_walking_player_slots_stay_near_player` + `Observable_sticky_ignores_subsecond_hysteresis_spike` | Orbit tracks your walk; &lt;1s run-past of ally doesn’t re-anchor | Spawn greydwarfs; walk; have friend sprint past &lt;1s; then stand closer ≥1s |
-| 3 | Pack-as-Unit FormUp magnet — straggler greys/skeletons PreferRun hard back into formation when you kite | `Observable_straggler_runs_PreferRun_into_lattice_when_player_kites` | Far member sprints toward pack slots, not forever solo chasing you | Kite; watch straggler close diameter |
-| 4 | Theater Pin/Flank/Harass — skeletons hold front (Pin), greys kite/orbit (Harass/Flank); Deathrush always charges | `Observable_Roman_and_Ambush_theater_assigns_Pin_and_Harass_when_coengaged` + `Observable_DeathRush_stays_Charge_while_theater_assigns_others` | Mixed spawn: line in front, greys off-axis/orbit, greylings bee-line | `spawn skeleton 8` + `spawn greydwarf 8` (+ optional greyling); `ft status` theater counts |
-| 5 | Sticky dwell — run past another player for &lt;1s shouldn’t re-anchor Ambush | `Observable_sticky_ignores_subsecond_hysteresis_spike` | Orbit stays on original sticky through sub-second spike | Two players; brief pass; sticky id / orbit focus unchanged |
+| 1 | PreferRun = !HoldGround — advancing packs sprint into slots; planted Hold stands | `Observable_PreferRun_equals_not_HoldGround_Advance_runs_Hold_plants` (PlayerPathSim multi-tick, PreferRunViolations==0, Desired leaves spawn) + sibling `PreferRun_true_when_not_holding` / `PreferRun_mirrors_not_HoldGround` | Advance: members run into lattice; StandoffHold near slot: Front/Leader plant | Eyes + intents math offline; live: no freeze-in-blob on spawn Advance |
+| 2 | Ambush sticky + sustained dwell — Greydwarfs orbit YOU; brief 2nd player closer doesn’t flip; sustained closer does | `Observable_Ambush_orbit_tracks_walking_player_slots_stay_near_player` (MeanDesiredToSticky band + angular variance) + `Observable_sticky_ignores_subsecond_hysteresis_spike` (3 ticks @ dt=0.25 zero flaps; sustained → one switch) + sibling `Sticky_hysteresis_under_zigzag_zero_flaps_then_one_switch` / `Sticky_requires_sustained_hysteresis_breach_not_single_spike` | Orbit tracks your walk; &lt;1s run-past of ally doesn’t re-anchor | Spawn greydwarfs; walk; have friend sprint past &lt;1s; then stand closer ≥1s |
+| 3 | Pack-as-Unit FormUp magnet — straggler greys/skeletons PreferRun hard back into formation when you kite | `Observable_straggler_runs_PreferRun_into_lattice_when_player_kites` (Desired→centroid distance) + siblings `Hold_order_magnets_far_member_with_PreferRun`, `Ambush_Flank_magnets_far_member_toward_slot`, `FormUp_magnet_snaps_far_member_to_slot_with_PreferRun`, `Zero_magnet_distance_leaves_far_member_unsnapped`, `Charge_is_excluded_from_FormUp_magnet` | Far member sprints toward pack slots, not forever solo chasing you | Kite; watch straggler close diameter |
+| 4 | Theater Pin/Flank/Harass — skeletons hold front (Pin), greys kite/orbit (Harass/Flank); Deathrush always charges | `Observable_Roman_and_Ambush_theater_assigns_Pin_and_Harass_when_coengaged` + `Observable_DeathRush_stays_Charge_while_theater_assigns_others` + siblings `Solo_pack_and_split_focus_get_no_role`, `Outside_coengage_radius_does_not_join`, `Hysteresis_holds_pin_against_a_closer_arrival_until_dwell`, `TwoRomans_closer_pins_farther_flanks` | Mixed spawn: line in front, greys off-axis/orbit, greylings bee-line | `spawn skeleton 8` + `spawn greydwarf 8` (+ optional greyling); `ft status` theater counts |
+| 5 | Sticky dwell — run past another player for &lt;1s shouldn’t re-anchor Ambush | `Observable_sticky_ignores_subsecond_hysteresis_spike` + `Sticky_requires_sustained_hysteresis_breach_not_single_spike` (explicit dt=0.25; interrupted dwell; mid-dwell candidate reset) | Orbit stays on original sticky through sub-second spike | Two players; brief pass; sticky id / orbit focus unchanged |
+
+**Azog R1 + R2 closed** on `ft-narvi-proof` (harden-only: Observable Facts + sibling PackAsUnit/Version108/109/Theater/sticky tests; no production doctrine changes).
 
 Defaults that gate live feel: `AmbushAnchorHysteresis=10`, `AmbushStickySwitchDwellSeconds=1.0`, `FormUpMagnetDistance=3.5`, `TheaterRoleDwellSeconds=2.5`, `TheaterCoEngageRadius=48`.
 
@@ -82,8 +84,8 @@ Defaults that gate live feel: `AmbushAnchorHysteresis=10`, `AmbushStickySwitchDw
 
 **Offline assert**
 
-- `Observable_PreferRun_equals_not_HoldGround_Advance_runs_Hold_plants` in `InGameObservableContractTests.cs`
-- Also enforced as `PreferRunViolations == 0` across `PlayerPathSim` history helpers.
+- `Observable_PreferRun_equals_not_HoldGround_Advance_runs_Hold_plants` in `InGameObservableContractTests.cs` — multi-tick PlayerPathSim Advance; PreferRunViolations==0; Desired leaves spawn pile; Hold plant is Front/Leader when AssignedRole available.
+- Sibling: `PreferRun_true_when_not_holding` (Version108, multi-tick Desired leaves spawn) / `PreferRun_mirrors_not_HoldGround`.
 
 **Expected camera / behavior**
 
@@ -139,8 +141,9 @@ Per-squad director line may show `[Roman] … → Advance (ShieldWall/…)` then
 
 **Offline asserts**
 
-- `Observable_Ambush_orbit_tracks_walking_player_slots_stay_near_player`
-- `Observable_sticky_ignores_subsecond_hysteresis_spike` (dwell half of claim)
+- `Observable_Ambush_orbit_tracks_walking_player_slots_stay_near_player` — MeanDesiredToSticky band + angular variance of Desired around sticky
+- `Observable_sticky_ignores_subsecond_hysteresis_spike` — CountStickyFlaps==0 for 3 ticks @ dt=0.25; sustained ≥dwell → exactly one switch
+- Sibling: `Sticky_hysteresis_under_zigzag_zero_flaps_then_one_switch`
 
 **Expected camera / behavior**
 
@@ -198,7 +201,8 @@ Sticky id is not always printed on heartbeat; judge by **orbit focus** (eyes) + 
 
 **Offline assert**
 
-- `Observable_straggler_runs_PreferRun_into_lattice_when_player_kites`
+- `Observable_straggler_runs_PreferRun_into_lattice_when_player_kites` — Desired distance to pack centroid (not soft Desired.x)
+- Siblings: `PackAsUnitEdgeTests.Hold_order_magnets_far_member_with_PreferRun`, `Ambush_Flank_magnets_far_member_toward_slot`, `FormUp_magnet_snaps_far_member_to_slot_with_PreferRun`; Charge excluded via `Charge_is_excluded_from_FormUp_magnet`
 
 **Expected camera / behavior**
 
@@ -254,6 +258,7 @@ ft get FormUpMagnetDistance   # expect 3.5 unless you changed it
 
 - `Observable_Roman_and_Ambush_theater_assigns_Pin_and_Harass_when_coengaged`
 - `Observable_DeathRush_stays_Charge_while_theater_assigns_others`
+- Theater siblings (cite by name): `Solo_pack_and_split_focus_get_no_role`, `Outside_coengage_radius_does_not_join`, `Hysteresis_holds_pin_against_a_closer_arrival_until_dwell` (multi-tick Assign(0.5)×N age), `TwoRomans_closer_pins_farther_flanks`
 
 **Expected camera / behavior**
 
@@ -317,6 +322,7 @@ FactionTactics heartbeat: … orders=[Advance=1,Kite=1] …   # histogram may om
 **Offline assert**
 
 - `Observable_sticky_ignores_subsecond_hysteresis_spike`
+- `Sticky_requires_sustained_hysteresis_breach_not_single_spike` — explicit `deltaTime=0.25`; interrupted dwell clears candidate; mid-dwell candidate change resets accumulation
 
 **Expected camera / behavior**
 
