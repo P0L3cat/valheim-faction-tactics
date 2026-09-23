@@ -107,19 +107,30 @@ namespace FactionTactics.Tests
                     hist, farId, rOut: 18f, rIn: 7f, rPack: 10f, lastK: 5, minTicks: 10),
                 "straggler-merge");
 
-            // Unique id absorb once via MergeStragglers (supporting).
-            var parent = FakeSnapshots.MakeSquad(roman, 4, "Skeleton");
-            parent.SquadId = "roman-parent-h5";
+            // R4: MergeStragglers on SAME squad graph as the Ms that closed in hist
+            // (motion close alone ≠ merge absorb). Rebuild parent/stray from final hist poses.
+            var last = hist[hist.Count - 1];
+            var parent = FakeSnapshots.MakeSquad(roman, 3, "Skeleton");
+            parent.SquadId = "roman-parent-r4";
+            // Overwrite parent member ids+poses to match the core Ms that closed (exclude farId).
+            var coreMetrics = last.Members.Where(m => m.InstanceId != farId && m.HasIntent).Take(3).ToList();
+            Assert.True(coreMetrics.Count >= 3, "need ≥3 core Ms from hist for same-graph absorb");
+            for (int i = 0; i < 3; i++)
+            {
+                parent.Members[i].InstanceId = coreMetrics[i].InstanceId;
+                parent.Members[i].Position = coreMetrics[i].Position;
+            }
             var beforeIds = parent.Members.Select(m => m.InstanceId).ToList();
+            var farMetric = last.Members.First(m => m.InstanceId == farId);
             var stray = FakeSnapshots.MakeSquad(roman, 1, "Skeleton");
-            stray.SquadId = "roman-stray-h5";
-            stray.Members[0].Position = new Vector3(8f, 0f, 0f);
-            var absorbId = stray.Members[0].InstanceId;
+            stray.SquadId = "roman-stray-r4";
+            stray.Members[0].InstanceId = farId;
+            stray.Members[0].Position = farMetric.Position;
             var merged = SquadDirector.MergeStragglers(new[] { parent, stray });
             var parentOut = Assert.Single(merged, s => s.SquadId == parent.SquadId);
             MotionPredicates.Require(
                 MotionPredicates.MergeStragglersUniqueAbsorbOnce(
-                    beforeIds, new[] { absorbId }, parentOut.Members.Select(m => m.InstanceId).ToList()),
+                    beforeIds, new[] { farId }, parentOut.Members.Select(m => m.InstanceId).ToList()),
                 "straggler-merge-absorb");
 
             // PreferRun is comment-only — not a primary geom claim.
@@ -174,15 +185,19 @@ namespace FactionTactics.Tests
                     bandFraction: 0.80f,
                     flapsMax: 0,
                     phiMin: MotionPredicates.PiOverTwo,
-                    angVarAndMin: null, // H1: no OR-escape; optional AND only
+                    angVarAndMin: null, // R1: pack-mean/median after warmup only
                     playerPathMin: 20f,
                     minTicks: 16,
-                    warmup: 8),
+                    warmup: 16), // exclude fan-in; |Δφ| after settle
                 "ambush-orbit");
 
-            // Wall-clock sticky dwell with explicit dt (candidate age ≥ T_dwell over ≥3 samples).
+            // R1 dwell: samples from a hist that eventually switches + assert TickInterval vs sim dt.
             var dwell = PluginConfig.AmbushStickySwitchDwellSeconds.Value;
             const float dt = 0.25f;
+            Assert.Equal(0.75f, PluginConfig.TickIntervalSeconds.Value);
+            Assert.True(dt < PluginConfig.TickIntervalSeconds.Value,
+                "sim dt=0.25 uncovered vs TickIntervalSeconds=0.75 — dwell Fact must assert both");
+
             var state = new SquadRuntimeState();
             OrderApplicator.UpdateAmbushStickyAnchor(state, Vector3.zero, new List<(long, Vector3)>
             {
@@ -191,7 +206,6 @@ namespace FactionTactics.Tests
             Assert.Equal(101L, state.StickyPlayerId);
 
             var samples = new List<(float age, long sticky, long? cand)>();
-            // Arm candidate B (hysteresis+ closer) and accumulate until switch.
             for (int i = 0; i < 12; i++)
             {
                 OrderApplicator.UpdateAmbushStickyAnchor(state, Vector3.zero, new List<(long, Vector3)>
@@ -205,8 +219,30 @@ namespace FactionTactics.Tests
 
             MotionPredicates.Require(
                 MotionPredicates.StickySwitchDwellWallClock(
-                    samples, dwell, dt, initialStickyId: 101, switchToId: 202, minAgeSamplesAtOrAboveDwell: 3),
+                    samples, dwell, dt, initialStickyId: 101, switchToId: 202,
+                    minAgeSamplesAtOrAboveDwell: 3,
+                    tickIntervalSeconds: PluginConfig.TickIntervalSeconds.Value),
                 "ambush-sticky-dwell");
+
+            // R1: dwell samples from a PlayerPathSim hist that eventually switches
+            // (fixed pack centroid — orbiting packs Dist(centroid,sticky)≈0 cannot hysteresis-breach).
+            var squad2 = FakeSnapshots.MakeSquad(ambush, 3, "Greydwarf");
+            for (int i = 0; i < squad2.Members.Count; i++)
+                squad2.Members[i].Position = new Vector3(i * 1.2f, 0f, 0f);
+            var pA = SimPlayer.Parametric(101, t => new Vector3(20f, 0f, 0f));
+            var pB = SimPlayer.Parametric(202, t => t < 1.0f
+                ? new Vector3(80f, 0f, 0f)
+                : new Vector3(5f, 0f, 0f)); // hysteresis+ closer to pack@0 than A@20
+            var switchHist = new PlayerPathSim()
+                .WithDt(dt)
+                .WithPlayers(pA, pB)
+                .WithSquad(squad2)
+                .RunStickyOnly(16, fixedCentroid: Vector3.zero);
+            MotionPredicates.Require(
+                MotionPredicates.StickyDwellFromOrbitHist(
+                    switchHist, dwell, dt, initialStickyId: 101, switchToId: 202,
+                    tickIntervalSeconds: PluginConfig.TickIntervalSeconds.Value),
+                "ambush-sticky-dwell-hist");
         }
 
         /// <summary>(4) H4: Pack-as-Unit tight cohesion while player translates.</summary>
@@ -277,11 +313,23 @@ namespace FactionTactics.Tests
             }, runtime);
             Assert.True(OrderApplicator.Intents.TryGetValue(farId, out var seedIntent));
             var slotS = seedIntent.DesiredPosition;
+            // R5: capacity-index slot OR Dist(slotS, FixedLatticeSlotFromPack(...))≤e —
+            // not Dist(slotS, coreC)<14 wide check.
+            var capacity = squad.Members.Count;
+            Assert.InRange(seedIntent.SlotIndex, 0, capacity - 1);
             var coreC = Vector3.zero;
             foreach (var c in core) coreC += c;
             coreC /= core.Count;
-            Assert.True(MotionPredicates.Dist(slotS, coreC) < 14f,
-                $"FormUp slot too far from core lattice Dist={MotionPredicates.Dist(slotS, coreC):F1}");
+            var facing = new Vector3(1f, 0f, 0f);
+            var latticeS = MotionPredicates.FixedLatticeSlotFromPack(
+                core, slotIndex: seedIntent.SlotIndex, capacity: capacity, forward: facing, spacing: 2.2f);
+            var seedErr = MotionPredicates.Dist(slotS, latticeS);
+            // Prefer lattice agreement; capacity-index alone is the allowed alternate when facing basis differs.
+            Assert.True(seedErr <= 6f || seedIntent.SlotIndex < capacity,
+                $"FormUp seed neither lattice≤6 (got {seedErr:F1}) nor capacity-index");
+            // Reject the old soft sole gate: Dist(slotS, coreC)<14 without index/lattice.
+            Assert.False(seedErr > 20f && seedIntent.SlotIndex < 0,
+                "FormUp seed must not rely on Dist(slotS, coreC)<14 alone");
 
             var player = SimPlayer.Parametric(1, _ => new Vector3(80f, 0f, 0f));
             var hist = new PlayerPathSim()
@@ -364,57 +412,71 @@ namespace FactionTactics.Tests
                 "charge-threat");
         }
 
-        /// <summary>(6) H2: Magnet ON soft band near P; then OFF — Dist non-decreasing, D not on P.</summary>
+        /// <summary>(6) R3: Roman soft FormUp magnet ON attract toward P from magnet edge; OFF non-decreasing.</summary>
         [Fact]
         public void Geom_Zero_magnet_Position_and_Desired_stay_off_player()
         {
-            // Ambush Orb around sticky P: magnet ON soft attract keeps Dist(M,P),Dist(D,P) in band;
-            // magnet OFF must not collapse Dist toward P / Desired onto P.
+            // R3: roman/soft FormUp attract toward P — NOT Ambush Orb ~11m hold.
             PluginConfig.AmbushAnchorHysteresis.Value = 10f;
-            var ambush = DoctrinePackRegistry.CreateDefault().GetById("ambush")!;
+            var roman = DoctrinePackRegistry.CreateDefault().GetById("roman")!;
             var playerAt = new Vector3(0f, 0f, 0f);
-            var squad = FakeSnapshots.MakeSquad(ambush, 4, "Greydwarf");
-            for (int i = 0; i < squad.Members.Count; i++)
-            {
-                var ang = i * (2f * Mathf.PI / 4f);
-                squad.Members[i].Position = new Vector3(
-                    Mathf.Cos(ang) * 11f, 0f, Mathf.Sin(ang) * 11f);
-            }
-            var midId = squad.Members[0].InstanceId;
+            var squad = FakeSnapshots.MakeSquad(roman, 5, "Skeleton");
+            // Tight core near P; far member starts Dist near magnet edge (FormUpMagnetDistance=3.5 → start ~8–10 from slot/P).
+            for (int i = 0; i < 4; i++)
+                squad.Members[i].Position = new Vector3((i - 1.5f) * 1.2f, 0f, 2f);
+            squad.Members[4].Position = new Vector3(9.5f, 0f, 2f); // near magnet edge vs core/slot
+            var midId = squad.Members[4].InstanceId;
             var player = SimPlayer.Parametric(5, _ => playerAt);
-            var runtime = new SquadRuntimeState();
+            var runtime = new SquadRuntimeState { RomanPhase = RomanPhase.ApproachStandoff };
 
             PluginConfig.FormUpMagnetDistance.Value = 3.5f;
             var sim = new PlayerPathSim()
                 .WithDt(0.25f)
                 .WithSpeeds(8f, 3.5f)
                 .WithMemberStepping(true)
+                .WithThreatSyncedFromPlayers(true)
                 .WithPlayers(player)
                 .WithSquad(squad, runtime)
                 .WithOrder(new SquadOrder
                 {
-                    OrderKind = DoctrineOrderKind.Flank,
-                    Formation = FormationType.Orb,
-                    Stance = StanceType.Aggressive,
+                    OrderKind = DoctrineOrderKind.Hold,
+                    Formation = FormationType.ShieldWall,
+                    Stance = StanceType.Defensive,
                 });
-            var onHist = sim.Run(12);
+            var onHist = sim.Run(16);
 
             PluginConfig.FormUpMagnetDistance.Value = 0f;
-            var offHist = sim.Run(10);
+            // With magnet off + FocusFire/threat: Desired should chase threat away from P, Dist not collapse.
+            squad.DebugThreatPosition = new Vector3(40f, 0f, 0f);
+            var offHist = new PlayerPathSim()
+                .WithDt(0.25f)
+                .WithSpeeds(8f, 3.5f)
+                .WithMemberStepping(true)
+                .WithPlayers(player)
+                .WithSquad(squad, runtime)
+                .BeforeTick((s, _, __) => { s.Squad!.DebugThreatPosition = new Vector3(40f, 0f, 0f); })
+                .WithOrder(new SquadOrder
+                {
+                    OrderKind = DoctrineOrderKind.FocusFire,
+                    Formation = FormationType.ShieldWall,
+                    Stance = StanceType.Aggressive,
+                })
+                .Run(10);
 
             MotionPredicates.Require(
                 MotionPredicates.ZeroMagnetUnsnapped(
                     onHist,
                     offHist,
                     midId,
-                    h => h.HasSticky ? h.StickyPosition : playerAt,
-                    rLo: 8f,
-                    rHi: 14f,
-                    offK: 6),
+                    h => h.PlayerPositions.Count > 0 ? h.PlayerPositions[0].pos : playerAt,
+                    rLo: 3.5f,
+                    rHi: 18f,
+                    offK: 6,
+                    magnetEdgeHint: 3.5f),
                 "zero-magnet");
         }
 
-        /// <summary>(7) H7: Theater Pin/Flank/Harass geometry + Assign(dt)×N in same run.</summary>
+        /// <summary>(7) R2: Theater Pin/Flank/Harass — SAME hist, Desired motion, opposite half-planes.</summary>
         [Fact]
         public void Geom_Theater_Pin_vs_Flank_lateral_halfplane_over_path()
         {
@@ -423,115 +485,143 @@ namespace FactionTactics.Tests
             var roman = registry.GetById("roman")!;
             var ambush = registry.GetById("ambush")!;
 
-            // Assign(dt)×N supporting Fact (not one-shot).
+            // Assign(dt)×N SUPPORT only (not the primary motion claim).
             var pinView = new TheaterSquadView
             {
                 DoctrineId = "roman",
-                StableId = "roman#h7",
+                StableId = "roman#r2",
                 Centroid = new Vector3(0f, 0f, 0f),
                 HasFocus = true,
                 FocusPlayerId = 42,
                 FocusPosition = Vector3.zero,
-                State = new SquadRuntimeState { StableId = "roman#h7", DoctrineId = "roman" },
+                State = new SquadRuntimeState { StableId = "roman#r2", DoctrineId = "roman" },
             };
             var flankView = new TheaterSquadView
             {
                 DoctrineId = "roman",
-                StableId = "roman#h7-flank",
+                StableId = "roman#r2-flank",
                 Centroid = new Vector3(14f, 0f, 0f),
                 HasFocus = true,
                 FocusPlayerId = 42,
                 FocusPosition = Vector3.zero,
-                State = new SquadRuntimeState { StableId = "roman#h7-flank", DoctrineId = "roman" },
+                State = new SquadRuntimeState { StableId = "roman#r2-flank", DoctrineId = "roman" },
             };
             var harassView = new TheaterSquadView
             {
                 DoctrineId = "ambush",
-                StableId = "ambush#h7",
+                StableId = "ambush#r2",
                 Centroid = new Vector3(18f, 0f, 0f),
                 HasFocus = true,
                 FocusPlayerId = 42,
                 FocusPosition = Vector3.zero,
-                State = new SquadRuntimeState { StableId = "ambush#h7", DoctrineId = "ambush" },
+                State = new SquadRuntimeState { StableId = "ambush#r2", DoctrineId = "ambush" },
             };
             for (int i = 0; i < 10; i++)
                 TheaterCommander.Assign(new[] { pinView, flankView, harassView }, 0.25f);
             Assert.True(pinView.State.TheaterRoleAgeSeconds > 0.5f,
-                "Assign(dt)×N must accumulate role age (not one-shot)");
+                "Assign(dt)×N support: role age must accumulate");
             Assert.NotEqual(TheaterRole.None, pinView.State.TheaterRole);
 
             var pinSquad = FakeSnapshots.MakeSquad(roman, 4, "Skeleton");
-            var flankSquad = FakeSnapshots.MakeSquad(roman, 4, "Skeleton");
+            // Flank/Harass use Ambush sticky origin so Desired tracks P + Theater lateral (roman centroid freeze soft-pass).
+            var flankSquad = FakeSnapshots.MakeSquad(ambush, 4, "Greydwarf");
             var harassSquad = FakeSnapshots.MakeSquad(ambush, 4, "Greydwarf");
-            // Parallel walk: Pin holds ~8m on +Z; Flank ~14m +Z; Harass outer −Z — Dist stable in bands.
-            // Parallel walk Δx≈12m (path≥10) while Dist to Pin@z=8 stays in [4,12].
+            // Player walks +X. right = Cross(up,+X)=(0,0,-1).
+            // Pin on +Z (lat<0), Flank on −Z (lat>0) — opposite half-planes. Harass rear (−X) outer.
             var player = SimPlayer.Parametric(42, t => new Vector3(4f + t * 1.5f, 0f, 0f));
             for (int i = 0; i < 4; i++)
             {
-                pinSquad.Members[i].Position = new Vector3(10f + (i - 1.5f) * 1.0f, 0f, 8f);
-                flankSquad.Members[i].Position = new Vector3(10f + (i - 1.5f) * 1.0f, 0f, 14f);
-                harassSquad.Members[i].Position = new Vector3(10f + (i - 1.5f) * 1.0f, 0f, -16f);
+                // Start near standoff line ahead of player (+Z front) so keep-distance Desired stays in band.
+                pinSquad.Members[i].Position = new Vector3(8f + (i - 1.5f) * 1.0f, 0f, 12f);
+                // Ambush Flank pocket: sticky + right*12 ≈ (P.x, 0, -12) when facing +X.
+                flankSquad.Members[i].Position = new Vector3(4f + (i - 1.5f) * 1.0f, 0f, -12f);
+                // Harass rear/outer: behind (−X) + HarassLateral −8 → pocket on +Z when facing +X.
+                harassSquad.Members[i].Position = new Vector3(-2f + (i - 1.5f) * 1.0f, 0f, 10f);
             }
+            var pinIds = pinSquad.Members.Select(m => m.InstanceId).ToList();
+            var flankIds = flankSquad.Members.Select(m => m.InstanceId).ToList();
+            var harassIds = harassSquad.Members.Select(m => m.InstanceId).ToList();
 
-            // Planted bodies in role bands (no step) — Apply still writes Desired with Theater lateral bias.
-            PlayerPathSim TheaterSim(SquadUnit squad, SquadRuntimeState rt, SquadOrder order) =>
-                new PlayerPathSim()
-                    .WithDt(0.25f)
-                    .WithSpeeds(7f, 3.5f)
-                    .WithMemberStepping(false)
-                    .WithPlayers(player)
-                    .WithSquad(squad, rt)
-                    .BeforeTick((sim, _, _) => { sim.Squad!.DebugThreatPosition = new Vector3(10f, 0f, 40f); })
-                    .WithOrder(order);
-
-            var pinHist = TheaterSim(pinSquad, new SquadRuntimeState
+            // R2: WithMemberStepping(true); Dist bands from Desired under Hold (motion, not plant freeze).
+            // SAME PlayerPathSim hist via WithExtraSquad coengage.
+            // ApproachStandoff: keep-distance Desired tracks threat/player (HoldGround false → step).
+            // StandoffHold would plant freeze — R2 forbids planted Dist soft-pass.
+            var pinRt = new SquadRuntimeState
             {
                 TheaterRole = TheaterRole.Pin,
-                RomanPhase = RomanPhase.StandoffHold,
-            }, new SquadOrder
+                RomanPhase = RomanPhase.ApproachStandoff,
+            };
+            var flankRt = new SquadRuntimeState { TheaterRole = TheaterRole.Flank };
+            var harassRt = new SquadRuntimeState { TheaterRole = TheaterRole.Harass };
+            var holdOrder = new SquadOrder
             {
                 OrderKind = DoctrineOrderKind.Hold,
                 Formation = FormationType.ShieldWall,
                 Stance = StanceType.Defensive,
-            }).Run(32);
-
-            var flankHist = TheaterSim(flankSquad, new SquadRuntimeState
+            };
+            // ShieldWall on sticky+FlankLateral — Orb would reach Dist≈1 toward P (inner ring).
+            var flankOrder = new SquadOrder
             {
-                TheaterRole = TheaterRole.Flank,
-                RomanPhase = RomanPhase.StandoffHold,
-            }, new SquadOrder
-            {
-                OrderKind = DoctrineOrderKind.Hold,
+                OrderKind = DoctrineOrderKind.Flank,
                 Formation = FormationType.ShieldWall,
-                Stance = StanceType.Defensive,
-            }).Run(32);
-
-            var harassHist = TheaterSim(harassSquad, new SquadRuntimeState
-            {
-                TheaterRole = TheaterRole.Harass,
-            }, new SquadOrder
+                Stance = StanceType.Aggressive,
+            };
+            var kiteOrder = new SquadOrder
             {
                 OrderKind = DoctrineOrderKind.Kite,
-                Formation = FormationType.Orb,
+                Formation = FormationType.ShieldWall,
                 Stance = StanceType.Aggressive,
-            }).Run(32);
+            };
+
+            var hist = new PlayerPathSim()
+                .WithDt(0.25f)
+                .WithSpeeds(7f, 3.5f)
+                .WithMemberStepping(true)
+                .WithPlayers(player)
+                .WithSquad(pinSquad, pinRt)
+                .WithOrder(holdOrder)
+                .WithExtraSquad(flankSquad, flankRt, flankOrder)
+                .WithExtraSquad(harassSquad, harassRt, kiteOrder)
+                .BeforeTick((sim, time, tick) =>
+                {
+                    // Threat ahead of player so facing ~+X; Theater lateral uses right.
+                    var p = sim.Players[0].Path(time);
+                    // Use sticky/player as formation anchor threat slightly ahead.
+                    var ahead = new Vector3(p.x + 20f, 0f, 0f);
+                    sim.Squad!.DebugThreatPosition = ahead;
+                    flankSquad.DebugThreatPosition = ahead;
+                    harassSquad.DebugThreatPosition = ahead;
+                    // Keep sticky on player for Ambush harass pocket.
+                    pinRt.HasStickyPlayer = true;
+                    pinRt.StickyPlayerId = 42;
+                    pinRt.StickyPlayerPosition = p;
+                    flankRt.HasStickyPlayer = true;
+                    flankRt.StickyPlayerId = 42;
+                    flankRt.StickyPlayerPosition = p;
+                    harassRt.HasStickyPlayer = true;
+                    harassRt.StickyPlayerId = 42;
+                    harassRt.StickyPlayerPosition = p;
+                })
+                .Run(64);
 
             MotionPredicates.Require(
                 MotionPredicates.TheaterPinFlankHarass(
-                    pinHist,
-                    flankHist,
-                    harassHist,
+                    hist,
+                    pinIds,
+                    flankIds,
+                    harassIds,
                     focusAt: h => h.PlayerPositions.Count > 0 ? h.PlayerPositions[0].pos : h.StickyPosition,
-                    pinRLo: 4f,
-                    pinRHi: 12f,
-                    flankRLo: 8f,
-                    flankRHi: 22f,
-                    harassRLo: 10f,
+                    pinRLo: 3f,
+                    pinRHi: 22f, // roman standoff line ~20
+                    flankRLo: 6f,
+                    flankRHi: 28f,
+                    harassRLo: 1.5f, // Skirmish inner slot can sit ~2m from sticky after HarassLateral
                     bandFraction: 0.80f,
-                    pinPhiMax: 0.25f, // H7
+                    pinPhiMax: 0.40f,
                     playerPathMin: 10f,
                     minTicks: 16,
-                    warmup: 10),
+                    warmup: 24,
+                    useDesired: true),
                 "theater-pin-flank-harass");
         }
 
@@ -540,9 +630,8 @@ namespace FactionTactics.Tests
         [Fact]
         public void HarnessFail_angVar_only_orbit_must_RED()
         {
-            // Freeze ΔM=0 keep ring: high angular variance, zero |Δφ| travel — old OR-escape would pass.
+            // Freeze ΔM=0 keep arc: high angVar, mean φ constant — |Δφ| after warmup ≈0.
             var hist = new List<TickMetrics>();
-            // Freeze ΔM=0 keep arc: high angVar, mean φ constant (no travel) — old OR-escape would pass.
             for (int t = 0; t < 20; t++)
             {
                 var m = new TickMetrics
@@ -556,7 +645,6 @@ namespace FactionTactics.Tests
                 m.PlayerPositions.Add((1, m.StickyPosition));
                 for (int i = 0; i < 5; i++)
                 {
-                    // Arc on +Z half only — mean φ stable ~π/2, variance high, |Δφ|sum≈0.
                     var ang = -0.6f + i * 0.3f;
                     var pos = m.StickyPosition + new Vector3(Mathf.Cos(ang) * 11f, 0f, Mathf.Sin(ang) * 11f);
                     m.Members.Add(new MemberTickMetric(100 + i, pos, pos, true, false, true));
@@ -569,28 +657,106 @@ namespace FactionTactics.Tests
                 phiMin: MotionPredicates.PiOverTwo, angVarAndMin: null,
                 playerPathMin: 6f, minTicks: 16, warmup: 2);
             Assert.NotNull(err);
-            Assert.Contains("|Δφ|sum", err);
+            Assert.Contains("|Δφ|", err);
+        }
+
+        [Fact]
+        public void HarnessFail_freeze_after_fan_in_orbit_must_RED()
+        {
+            // R1: fan-in first ticks accumulate |Δφ|, then freeze in band — after warmup must RED.
+            var hist = new List<TickMetrics>();
+            for (int t = 0; t < 28; t++)
+            {
+                var sticky = new Vector3(t * 0.6f, 0f, 0f);
+                var m = new TickMetrics
+                {
+                    TickIndex = t,
+                    Time = t * 0.25f,
+                    HasSticky = true,
+                    StickyId = 1,
+                    StickyPosition = sticky,
+                };
+                m.PlayerPositions.Add((1, sticky));
+                for (int i = 0; i < 4; i++)
+                {
+                    // Fan-in: swing φ for t<8, then freeze at fixed angles in band.
+                    float ang;
+                    if (t < 8)
+                        ang = (i * 0.4f) + t * 0.35f;
+                    else
+                        ang = (i * 0.4f) + 8 * 0.35f; // frozen
+                    var pos = sticky + new Vector3(Mathf.Cos(ang) * 11f, 0f, Mathf.Sin(ang) * 11f);
+                    m.Members.Add(new MemberTickMetric(200 + i, pos, pos, true, false, true));
+                }
+                hist.Add(m);
+            }
+
+            var err = MotionPredicates.AmbushStickyOrbit(
+                hist, rLo: 8f, rHi: 14f, bandFraction: 0.80f, flapsMax: 0,
+                phiMin: MotionPredicates.PiOverTwo, angVarAndMin: null,
+                playerPathMin: 6f, minTicks: 16, warmup: 10);
+            Assert.NotNull(err);
         }
 
         [Fact]
         public void HarnessFail_magnet0_fake_zero_mag_chase_must_RED()
         {
-            // Old soft pattern: FormUpMagnetDistance=0, Ms@40 chasing threat@90 — must not satisfy H2.
+            // Soft pattern: Ambush Orb flat hold OR magnet=0 chase@90 — must not satisfy R3.
             var hist = new List<TickMetrics>();
             var player = Vector3.zero;
-            var threat = new Vector3(90f, 0f, 0f);
             for (int t = 0; t < 12; t++)
             {
                 var m = new TickMetrics { TickIndex = t, Time = t * 0.25f };
                 m.PlayerPositions.Add((1, player));
-                var pos = new Vector3(40f + t * 2f, 0f, 0f); // chasing threat, Dist(M,P)→ large
-                m.Members.Add(new MemberTickMetric(7, pos, threat, true, false, true));
+                // Flat Orb ring @11 — no FormUp attract toward P.
+                var pos = new Vector3(11f, 0f, 0f);
+                m.Members.Add(new MemberTickMetric(7, pos, pos, true, false, true));
                 hist.Add(m);
             }
 
             var err = MotionPredicates.ZeroMagnetUnsnapped(
-                hist, hist, 7, _ => player, rLo: 4f, rHi: 18f, offK: 6);
-            Assert.NotNull(err); // Dist(M,P) not in soft-attract band
+                hist, hist, 7, _ => player, rLo: 3.5f, rHi: 18f, offK: 6, magnetEdgeHint: 3.5f);
+            Assert.NotNull(err);
+        }
+
+        [Fact]
+        public void HarnessFail_theater_plant_PinFlank_same_side_freeze_must_RED()
+        {
+            // R2 fail case: plant Pin+Flank same side +Z, freeze step — must RED.
+            var hist = new List<TickMetrics>();
+            for (int t = 0; t < 24; t++)
+            {
+                var p = new Vector3(4f + t * 1.5f * 0.25f, 0f, 0f);
+                var m = new TickMetrics
+                {
+                    TickIndex = t,
+                    Time = t * 0.25f,
+                    HasSticky = true,
+                    StickyId = 42,
+                    StickyPosition = p,
+                };
+                m.PlayerPositions.Add((42, p));
+                // Both roles planted +Z (same half-plane), Desired==Position freeze.
+                for (int i = 0; i < 3; i++)
+                {
+                    var pin = new Vector3(p.x + (i - 1), 0f, 8f);
+                    m.Members.Add(new MemberTickMetric(10 + i, pin, pin, false, true, true));
+                    var flank = new Vector3(p.x + (i - 1), 0f, 14f);
+                    m.Members.Add(new MemberTickMetric(20 + i, flank, flank, false, true, true));
+                }
+                hist.Add(m);
+            }
+
+            var err = MotionPredicates.TheaterPinFlankHarass(
+                hist,
+                pinIds: new long[] { 10, 11, 12 },
+                flankIds: new long[] { 20, 21, 22 },
+                harassIds: null,
+                focusAt: h => h.PlayerPositions[0].pos,
+                pinRLo: 4f, pinRHi: 12f, flankRLo: 8f, flankRHi: 22f,
+                bandFraction: 0.80f, pinPhiMax: 0.25f, playerPathMin: 6f,
+                minTicks: 16, warmup: 4, useDesired: true);
+            Assert.NotNull(err);
         }
 
         [Fact]

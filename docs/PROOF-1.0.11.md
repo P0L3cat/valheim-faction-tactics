@@ -68,7 +68,7 @@ If a claim cannot be proven offline, the matching test either asserts the math t
 | 4 | Theater Pin/Flank/Harass — skeletons hold front (Pin), greys kite/orbit (Harass/Flank); Deathrush always charges | `Observable_Roman_and_Ambush_theater_assigns_Pin_and_Harass_when_coengaged` + `Observable_DeathRush_stays_Charge_while_theater_assigns_others` + siblings `Solo_pack_and_split_focus_get_no_role`, `Outside_coengage_radius_does_not_join`, `Hysteresis_holds_pin_against_a_closer_arrival_until_dwell`, `TwoRomans_closer_pins_farther_flanks` | Mixed spawn: line in front, greys off-axis/orbit, greylings bee-line | `spawn skeleton 8` + `spawn greydwarf 8` (+ optional greyling); `ft status` theater counts |
 | 5 | Sticky dwell — run past another player for &lt;1s shouldn’t re-anchor Ambush | `Observable_sticky_ignores_subsecond_hysteresis_spike` + `Sticky_requires_sustained_hysteresis_breach_not_single_spike` (explicit dt=0.25; interrupted dwell; mid-dwell candidate reset) | Orbit stays on original sticky through sub-second spike | Two players; brief pass; sticky id / orbit focus unchanged |
 
-**Azog R1 + R2 + R3 residual closeout** on `ft-narvi-proof` (harden-only: Observable Facts + sibling PackAsUnit/Version108/109/Theater/sticky tests; tiny `SquadUnit.DebugThreatPosition` test hook only — no production doctrine changes).
+**Azog R1–R5 re-pick closeout** on `ft-narvi-proof` (harden-only: Observable Facts + sibling PackAsUnit/Version108/109/Theater/sticky tests; tiny `SquadUnit.DebugThreatPosition` test hook only — no production doctrine changes).
 
 Defaults that gate live feel: `AmbushAnchorHysteresis=10`, `AmbushStickySwitchDwellSeconds=1.0`, `FormUpMagnetDistance=3.5`, `TheaterRoleDwellSeconds=2.5`, `TheaterCoEngageRadius=48`.
 
@@ -445,6 +445,19 @@ Azog R3 holes folded into offline Facts on this branch (no Azog re-call). Closed
 | H8 Charge | Real FormUp slot (not PackCentroid); D closer to T than S by margin |
 
 Harness fail Facts RED on: angVar-only orbit; magnet=0 fake zero-mag; PackCentroid-as-slot FormUp; PreferRun-as-primary geom.
+
+**Narvi hole-pick R1–R5 (Azog re-pick on H1–H8 tip `4f3d324`):** behavior-only; no spawn hike; sticky off by default; no plate/GPortal; no Azog ping. R6 flee-speed PARKED.
+
+| Residual | Closeout |
+|----------|----------|
+| R2 Theater (worst) | SAME `PlayerPathSim` hist coengage ≥2 roles (`WithExtraSquad`); Dist bands from Desired motion + travel (not planted Position freeze); `Sign(pinLat)≠Sign(flankLat)` ≥80%; Harass rear/outer quarter; Assign(dt)×N support only. Harness RED: plant Pin+Flank same side +Z freeze |
+| R3 ZeroMagnet | Roman/soft FormUp attract toward P from magnet edge — NOT Ambush Orb ~11m hold; OFF Dist(M,P) non-decreasing + Desired not toward P / Dist(D,P) non-collapsing; optional ON peak Dist(D,P) drop then OFF recover. Harness RED: flat Orb hold / magnet0 chase |
+| R1 Ambush \|Δφ\| | Pack-mean φ OR median per-member **after warmup only** (no all-members×full-hist fan-in); sustained in-band \|Δφ\| rate; freeze-after-fan-in RED. Dwell: `StickyDwellFromOrbitHist` + TickIntervalSeconds vs sim dt Fact |
+| R4 Merge absorb | After motion close, `MergeStragglers` on SAME squad graph / absorb id as the Ms that closed in hist (motion close alone ≠ absorb) |
+| R5 FormUp seed | Capacity-index slot (`SlotIndex`) or `Dist(slotS, FixedLatticeSlotFromPack(...))≤e` — not `Dist(slotS, coreC)<14` |
+| R6 Flee speed | PARKED — leave alone |
+
+Harness fail Facts RED (added): `HarnessFail_freeze_after_fan_in_orbit_must_RED`; `HarnessFail_theater_plant_PinFlank_same_side_freeze_must_RED`; Orb-flat / magnet0 zero-mag.
 
 **Narvi geometric closeout (this branch):** Azog adversarial predicates implemented as PRIMARY offline wins in `MotionPredicates` / `MotionDoctrineTests`; soft flag-only Observable claims demoted to secondary. No production doctrine change; no plate.
 

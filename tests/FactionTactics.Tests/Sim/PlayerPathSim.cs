@@ -87,6 +87,9 @@ namespace FactionTactics.Tests.Sim
         public float MeanPositionToCentroid { get; set; }
         /// <summary>Count of intents where PreferRun != !HoldGround.</summary>
         public int PreferRunViolations { get; set; }
+        /// <summary>Runtime sticky-switch candidate age (seconds) at capture — R1 dwell-in-hist.</summary>
+        public float StickySwitchCandidateSeconds { get; set; }
+        public long StickySwitchCandidateId { get; set; }
         public List<MemberTickMetric> Members { get; } = new List<MemberTickMetric>();
         public List<(long id, Vector3 pos)> PlayerPositions { get; } = new List<(long, Vector3)>();
     }
@@ -120,6 +123,8 @@ namespace FactionTactics.Tests.Sim
         /// Squad.DebugThreatPosition + DebugFocus* so Charge/Advance facing reads the sim path.
         /// </summary>
         private bool _syncThreatFromPlayers;
+        private readonly List<(SquadUnit squad, SquadRuntimeState runtime, Func<PlayerPathSim, float, int, SquadOrder> order)> _extras
+            = new List<(SquadUnit, SquadRuntimeState, Func<PlayerPathSim, float, int, SquadOrder>)>();
 
         public SquadUnit? Squad => _squad;
         public SquadRuntimeState Runtime => _runtime;
@@ -138,6 +143,21 @@ namespace FactionTactics.Tests.Sim
         {
             _squad = squad ?? throw new ArgumentNullException(nameof(squad));
             _runtime = runtime ?? new SquadRuntimeState();
+            return this;
+        }
+
+        /// <summary>
+        /// Co-engage extra packs on the same player clock (R2 Theater SAME hist).
+        /// Each extra Apply+step merges members into the captured TickMetrics.
+        /// </summary>
+        public PlayerPathSim WithExtraSquad(
+            SquadUnit squad,
+            SquadRuntimeState runtime,
+            SquadOrder order)
+        {
+            if (squad == null) throw new ArgumentNullException(nameof(squad));
+            var o = order ?? throw new ArgumentNullException(nameof(order));
+            _extras.Add((squad, runtime ?? new SquadRuntimeState(), (_, __, ___) => o));
             return this;
         }
 
@@ -232,15 +252,41 @@ namespace FactionTactics.Tests.Sim
                 var centroid = ComputeCentroid(_squad);
                 OrderApplicator.UpdateAmbushStickyAnchor(_runtime, centroid, players, _dt);
                 SyncThreatHooks(players);
+                // Snapshot dwell candidate BEFORE Apply's Ambush null-players refresh clears it (R1).
+                var candAge = _runtime.StickySwitchCandidateSeconds;
+                var candId = _runtime.StickySwitchCandidateId;
+                var stickyIdSnap = _runtime.StickyPlayerId;
+                var stickyPosSnap = _runtime.StickyPlayerPosition;
+                var hasStickySnap = _runtime.HasStickyPlayer;
 
                 var order = _orderProvider != null ? _orderProvider(this, t, i) : _order;
                 _order = order;
                 _applicator.Apply(_squad, order, _runtime);
 
-                if (_stepMembers)
-                    StepMembersTowardIntents();
+                // Co-engage extras share the same player clock / hist (R2).
+                foreach (var (exSquad, exRt, exOrderFn) in _extras)
+                {
+                    var exCentroid = ComputeCentroid(exSquad);
+                    OrderApplicator.UpdateAmbushStickyAnchor(exRt, exCentroid, players, _dt);
+                    var exOrder = exOrderFn(this, t, i);
+                    _applicator.Apply(exSquad, exOrder, exRt);
+                }
 
-                history.Add(CaptureMetrics(i, t, players, order));
+                if (_stepMembers)
+                {
+                    StepMembersTowardIntents(_squad);
+                    foreach (var (exSquad, _, __) in _extras)
+                        StepMembersTowardIntents(exSquad);
+                }
+
+                var metrics = CaptureMetrics(i, t, players, order);
+                // Restore pre-Apply sticky dwell snapshot into hist (Apply may clear candidate).
+                metrics.StickySwitchCandidateSeconds = candAge;
+                metrics.StickySwitchCandidateId = candId;
+                metrics.HasSticky = hasStickySnap;
+                metrics.StickyId = stickyIdSnap;
+                metrics.StickyPosition = stickyPosSnap;
+                history.Add(metrics);
                 t += _dt;
             }
 
@@ -274,6 +320,8 @@ namespace FactionTactics.Tests.Sim
                     StickyId = _runtime.StickyPlayerId,
                     StickyPosition = _runtime.StickyPlayerPosition,
                     PackCentroid = centroid,
+                    StickySwitchCandidateSeconds = _runtime.StickySwitchCandidateSeconds,
+                    StickySwitchCandidateId = _runtime.StickySwitchCandidateId,
                 };
                 m.PlayerPositions.AddRange(players);
                 history.Add(m);
@@ -283,9 +331,9 @@ namespace FactionTactics.Tests.Sim
             return history;
         }
 
-        private void StepMembersTowardIntents()
+        private void StepMembersTowardIntents(SquadUnit squad)
         {
-            foreach (var member in _squad!.Members)
+            foreach (var member in squad.Members)
             {
                 if (!member.IsAlive)
                     continue;
@@ -348,6 +396,8 @@ namespace FactionTactics.Tests.Sim
                 OrderKind = order.OrderKind,
                 PackCentroid = centroid,
                 PackDiameter = diameter,
+                StickySwitchCandidateSeconds = _runtime.StickySwitchCandidateSeconds,
+                StickySwitchCandidateId = _runtime.StickySwitchCandidateId,
             };
             metrics.PlayerPositions.AddRange(players);
 
@@ -375,6 +425,31 @@ namespace FactionTactics.Tests.Sim
                     preferRun,
                     hold,
                     has));
+            }
+
+            // Merge co-engage extra pack members into the SAME hist (R2).
+            foreach (var (exSquad, _, __) in _extras)
+            {
+                foreach (var m in exSquad.Members)
+                {
+                    if (!m.IsAlive) continue;
+                    var has = OrderApplicator.Intents.TryGetValue(m.InstanceId, out var intent);
+                    var desired = has ? intent!.DesiredPosition : m.Position;
+                    var preferRun = has && intent!.PreferRun;
+                    var hold = has && intent!.HoldGround;
+                    if (has)
+                    {
+                        nWithIntent++;
+                        sumDesiredSticky += Vector3.Distance(desired, sticky);
+                        sumPosSticky += Vector3.Distance(m.Position, sticky);
+                        sumDesiredCentroid += Vector3.Distance(desired, centroid);
+                        sumPosCentroid += Vector3.Distance(m.Position, centroid);
+                        if (preferRun != !hold)
+                            violations++;
+                    }
+                    metrics.Members.Add(new MemberTickMetric(
+                        m.InstanceId, m.Position, desired, preferRun, hold, has));
+                }
             }
 
             metrics.PreferRunViolations = violations;

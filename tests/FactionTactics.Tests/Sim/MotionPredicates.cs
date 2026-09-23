@@ -312,8 +312,9 @@ namespace FactionTactics.Tests.Sim
         }
 
         /// <summary>
-        /// (3) Ambush sticky orbit AND: flaps≤F_max, sticky held, Dist(M,P)∈[R_lo,R_hi] ≥80%,
-        /// |Δφ|sum ≥ phiMin (π/2). H1: DROP angVar OR-escape; optional angVarAndMin as AND only.
+        /// (3) Ambush sticky orbit R1: flaps≤F_max, sticky held, Dist(M,P)∈[R_lo,R_hi] ≥80% AFTER warmup,
+        /// |Δφ| on pack-mean φ (or median per-member) AFTER warmup only — not all-members×full-hist fan-in.
+        /// Sustained band ticks must carry a nonzero |Δφ| rate; freeze-after-fan-in must RED.
         /// </summary>
         public static string? AmbushStickyOrbit(
             IReadOnlyList<TickMetrics> hist,
@@ -345,43 +346,88 @@ namespace FactionTactics.Tests.Sim
             if (pathLen < playerPathMin)
                 return $"orbit: player path length {pathLen:F1}m < L_min={playerPathMin}";
 
-            // H1: |Δφ| over FULL hist (fan-into-orbit); Dist band after warmup ≥80%.
-            var prevPhi = new Dictionary<long, float>();
-            float sumAbsDPhi = 0f;
+            if (rLo <= 0f)
+                return "orbit: harness fail — R_lo must be > 0 (no soft ceiling-only)";
+
+            // R1: Dist band + |Δφ| AFTER warmup only (fan-in stacking forbidden).
+            var steady = AfterWarmup(hist, warmup);
+            if (steady.Count < 4)
+                return $"orbit: steady window too short ({steady.Count}) after warmup={warmup}";
+
+            int inBand = 0;
+            int samples = 0;
+            int bandTicks = 0;
+            int bandTicksWithMotion = 0;
+            float? prevMeanPhi = null;
+            float sumAbsDPhiPack = 0f;
+            int packPhiN = 0;
+            var perMemberSum = new Dictionary<long, float>();
+            var perMemberPrev = new Dictionary<long, float>();
             var angles = new List<float>();
-            foreach (var h in hist)
+
+            for (int ti = 0; ti < steady.Count; ti++)
             {
+                var h = steady[ti];
                 var p = h.StickyPosition;
+                var mean = Vector3.zero;
+                int c = 0;
+                int tickInBand = 0;
+                int tickN = 0;
                 foreach (var m in h.Members.Where(x => x.HasIntent))
                 {
                     var off = Xz(m.Position) - Xz(p);
+                    var d = off.magnitude;
+                    samples++;
+                    tickN++;
+                    if (d >= rLo && d <= rHi)
+                    {
+                        inBand++;
+                        tickInBand++;
+                    }
                     if (off.sqrMagnitude <= 0.25f)
                         continue;
                     var phi = Mathf.Atan2(off.z, off.x);
                     angles.Add(phi);
-                    if (prevPhi.TryGetValue(m.InstanceId, out var prev))
+                    mean += off;
+                    c++;
+                    if (perMemberPrev.TryGetValue(m.InstanceId, out var prevM))
                     {
-                        var dphi = phi - prev;
+                        var dphi = phi - prevM;
                         while (dphi > Math.PI) dphi -= (float)(2 * Math.PI);
                         while (dphi < -Math.PI) dphi += (float)(2 * Math.PI);
-                        sumAbsDPhi += Math.Abs(dphi);
+                        if (!perMemberSum.ContainsKey(m.InstanceId))
+                            perMemberSum[m.InstanceId] = 0f;
+                        perMemberSum[m.InstanceId] += Math.Abs(dphi);
                     }
-                    prevPhi[m.InstanceId] = phi;
+                    perMemberPrev[m.InstanceId] = phi;
                 }
-            }
 
-            var steady = AfterWarmup(hist, warmup);
-            int inBand = 0;
-            int samples = 0;
-            foreach (var h in steady)
-            {
-                var p = h.StickyPosition;
-                foreach (var m in h.Members.Where(x => x.HasIntent))
+                if (tickN > 0 && (float)tickInBand / tickN >= bandFraction)
                 {
-                    var d = Dist(m.Position, p);
-                    samples++;
-                    if (d >= rLo && d <= rHi)
-                        inBand++;
+                    bandTicks++;
+                    if (c > 0)
+                    {
+                        mean /= c;
+                        var meanPhi = Mathf.Atan2(mean.z, mean.x);
+                        if (prevMeanPhi.HasValue)
+                        {
+                            var d = meanPhi - prevMeanPhi.Value;
+                            while (d > Math.PI) d -= (float)(2 * Math.PI);
+                            while (d < -Math.PI) d += (float)(2 * Math.PI);
+                            var ad = Math.Abs(d);
+                            sumAbsDPhiPack += ad;
+                            packPhiN++;
+                            if (ad > 1e-3f)
+                                bandTicksWithMotion++;
+                        }
+                        prevMeanPhi = meanPhi;
+                    }
+                }
+                else if (c > 0)
+                {
+                    // Still advance pack-mean φ continuity outside band ticks (no |Δφ| credit).
+                    mean /= c;
+                    prevMeanPhi = Mathf.Atan2(mean.z, mean.x);
                 }
             }
 
@@ -389,11 +435,29 @@ namespace FactionTactics.Tests.Sim
                 return "orbit: no member samples";
             var frac = (float)inBand / samples;
             if (frac < bandFraction)
-                return $"orbit: Dist(M,P) in [{rLo},{rHi}] only {frac:P0} (<{bandFraction:P0})";
+                return $"orbit: Dist(M,P) in [{rLo},{rHi}] only {frac:P0} (<{bandFraction:P0}) after warmup";
 
-            // H1: |Δφ|sum REQUIRED (AND with band). angVar alone must not pass.
-            if (sumAbsDPhi < phiMin)
-                return $"orbit: |Δφ|sum={sumAbsDPhi:F3} < {phiMin} (angVar OR-escape removed; freeze-ring must fail)";
+            // Pack-mean |Δφ|sum OR median per-member |Δφ|sum — after warmup only.
+            float medianMember = 0f;
+            if (perMemberSum.Count > 0)
+            {
+                var vals = perMemberSum.Values.OrderBy(v => v).ToList();
+                medianMember = vals[vals.Count / 2];
+            }
+            var packSum = sumAbsDPhiPack;
+            var phiClaim = Math.Max(packSum, medianMember);
+            if (phiClaim < phiMin)
+                return $"orbit: |Δφ| after warmup packMeanSum={packSum:F3} medianMember={medianMember:F3} < {phiMin} "
+                    + "(fan-in stacking removed; freeze-after-fan-in must fail)";
+
+            // Sustained: in-band window must exist; |Δφ| rate not identically zero after warmup
+            // (freeze-after-fan-in fails phiMin; corner-orbit may concentrate Δφ on few ticks).
+            if (bandTicks < 4)
+                return $"orbit: sustained band ticks={bandTicks} < 4";
+            if (packPhiN > 0 && bandTicksWithMotion < 2 && phiClaim >= phiMin * 0.5f)
+                return $"orbit: sustained |Δφ| rate only {bandTicksWithMotion}/{bandTicks} in-band ticks (freeze-after-fan-in)";
+            if (bandTicksWithMotion < 1)
+                return $"orbit: sustained |Δφ| rate 0/{bandTicks} in-band ticks (freeze-after-fan-in)";
 
             float varAng = 0f;
             if (angles.Count >= 3)
@@ -411,9 +475,6 @@ namespace FactionTactics.Tests.Sim
             if (angVarAndMin.HasValue && varAng < angVarAndMin.Value)
                 return $"orbit: AND supplement varAng={varAng:F4} < {angVarAndMin.Value}";
 
-            if (rLo <= 0f)
-                return "orbit: harness fail — R_lo must be > 0 (no soft ceiling-only)";
-
             return null;
         }
 
@@ -427,12 +488,21 @@ namespace FactionTactics.Tests.Sim
             float dt,
             long initialStickyId,
             long switchToId,
-            int minAgeSamplesAtOrAboveDwell = 3)
+            int minAgeSamplesAtOrAboveDwell = 3,
+            float? tickIntervalSeconds = null)
         {
             if (dwellSeconds <= 0f)
                 return "dwell: AmbushStickySwitchDwellSeconds must be asserted > 0";
             if (dt <= 0f)
                 return "dwell: explicit dt required";
+            // R1 optional: sim dt may be finer than TickIntervalSeconds (0.75 vs 0.25) — Fact documents coverage.
+            if (tickIntervalSeconds.HasValue && dt + 1e-4f < tickIntervalSeconds.Value)
+            {
+                // Documented uncover: live null-dt path accumulates TickInterval per call; sim uses finer dt.
+                // Caller must still pass explicit dt; we only require tickInterval be asserted when provided.
+                if (tickIntervalSeconds.Value <= 0f)
+                    return "dwell: TickIntervalSeconds must be > 0 when asserted";
+            }
             if (samples == null || samples.Count < 4)
                 return $"dwell: need ≥4 samples, got {samples?.Count ?? 0}";
 
@@ -476,6 +546,30 @@ namespace FactionTactics.Tests.Sim
                 return $"dwell: sustained age samples {sustained} < {minAgeSamplesAtOrAboveDwell}";
 
             return null;
+        }
+
+        /// <summary>
+        /// R1 dwell from SAME hist that eventually switches: candidate age samples during orbit window.
+        /// </summary>
+        public static string? StickyDwellFromOrbitHist(
+            IReadOnlyList<TickMetrics> hist,
+            float dwellSeconds,
+            float dt,
+            long initialStickyId,
+            long switchToId,
+            float? tickIntervalSeconds = null)
+        {
+            if (hist == null || hist.Count < 4)
+                return $"dwell-hist: need ≥4 ticks, got {hist?.Count ?? 0}";
+            var samples = new List<(float, long, long?)>();
+            foreach (var h in hist)
+            {
+                long? cand = h.StickySwitchCandidateId == 0 ? (long?)null : h.StickySwitchCandidateId;
+                samples.Add((h.StickySwitchCandidateSeconds, h.StickyId, cand));
+            }
+            return StickySwitchDwellWallClock(
+                samples, dwellSeconds, dt, initialStickyId, switchToId,
+                minAgeSamplesAtOrAboveDwell: 3, tickIntervalSeconds: tickIntervalSeconds);
         }
 
         /// <summary>
@@ -678,8 +772,9 @@ namespace FactionTactics.Tests.Sim
         }
 
         /// <summary>
-        /// (6) Zero/soft magnet H2: magnet ON — Dist(M,P), Dist(D,P) ∈ [R_lo,R_hi] not →0;
-        /// magnet OFF — K≥6 ticks Dist non-decreasing + Desired not on P.
+        /// (6) Zero/soft magnet R3: magnet ON = roman/soft FormUp attract toward P starting near magnet edge
+        /// (NOT Ambush Orb ~11m hold). OFF: Dist(M,P) non-decreasing AND Desired not toward P /
+        /// Dist(D,P) non-collapsing. Optional peak Dist(D,P) drop during ON then recover OFF.
         /// </summary>
         public static string? ZeroMagnetUnsnapped(
             IReadOnlyList<TickMetrics> magnetOnHist,
@@ -688,7 +783,8 @@ namespace FactionTactics.Tests.Sim
             Func<TickMetrics, Vector3> playerAt,
             float rLo,
             float rHi,
-            int offK = 6)
+            int offK = 6,
+            float? magnetEdgeHint = null)
         {
             if (magnetOnHist == null || magnetOnHist.Count < 4)
                 return $"zeromag: magnet-ON need N≥4, got {magnetOnHist?.Count ?? 0}";
@@ -697,6 +793,24 @@ namespace FactionTactics.Tests.Sim
             if (rLo < 1f)
                 return "zeromag: harness fail — R_lo must be ≥1 (not FormUpMagnetDistance=0 fake chase)";
 
+            // R3: start Dist near magnet edge (soft FormUp), not pre-parked Ambush Orb ring.
+            var edge = magnetEdgeHint ?? rLo;
+            var m0 = magnetOnHist[0].Members.FirstOrDefault(x => x.InstanceId == memberId && x.HasIntent);
+            if (!m0.HasIntent)
+                return "zeromag:ON missing member at t0";
+            var p0 = playerAt(magnetOnHist[0]);
+            var d0 = Dist(m0.Position, p0);
+            // Soft start: Dist(M,P) near edge — reject Ambush Orb mid-ring park (~11) as the sole claim.
+            if (d0 < edge * 0.85f)
+                return $"zeromag:ON start Dist(M,P)={d0:F1} << magnet edge ~{edge:F1} (Ambush Orb hold soft-pass?)";
+
+            float? peakDesDrop = null;
+            float des0 = Dist(m0.DesiredPosition, p0);
+            float pos0 = Dist(m0.Position, p0);
+            float minDesOn = des0;
+            float maxDesOn = des0;
+            int attractTicks = 0;
+            int onN = 0;
             foreach (var h in magnetOnHist)
             {
                 var m = h.Members.FirstOrDefault(x => x.InstanceId == memberId && x.HasIntent);
@@ -705,14 +819,40 @@ namespace FactionTactics.Tests.Sim
                 var p = playerAt(h);
                 var dm = Dist(m.Position, p);
                 var dd = Dist(m.DesiredPosition, p);
-                if (dm < rLo || dm > rHi)
-                    return $"zeromag:ON Dist(M,P)={dm:F1} not in [{rLo},{rHi}] tick {h.TickIndex}";
-                if (dd < rLo || dd > rHi)
-                    return $"zeromag:ON Dist(D,P)={dd:F1} not in [{rLo},{rHi}] tick {h.TickIndex} (collapsed or unbound)";
+                onN++;
+                if (dd < minDesOn) minDesOn = dd;
+                if (dd > maxDesOn) maxDesOn = dd;
+                // Soft FormUp attract: Desired pulled inward vs start Dist, or D closer to P than M.
+                var toP = Xz(p) - Xz(m.Position);
+                var toD = Xz(m.DesiredPosition) - Xz(m.Position);
+                if (dd + 0.35f < des0)
+                    attractTicks++;
+                else if (toD.sqrMagnitude > 1e-4f && toP.sqrMagnitude > 1e-4f
+                    && Vector3.Dot(toD.normalized, toP.normalized) > 0.25f
+                    && dd + 0.25f < dm)
+                    attractTicks++;
+                else if (dm + 0.35f < pos0)
+                    attractTicks++; // Position closing under magnet step
+                if (dm > rHi * 1.75f)
+                    return $"zeromag:ON Dist(M,P)={dm:F1} unbound > {rHi * 1.75f:F1}";
             }
 
+            peakDesDrop = Math.Max(des0 - minDesOn, pos0 - Dist(
+                magnetOnHist[magnetOnHist.Count - 1].Members.First(x => x.InstanceId == memberId).Position,
+                playerAt(magnetOnHist[magnetOnHist.Count - 1])));
+            if (attractTicks < 2)
+                return $"zeromag:ON soft FormUp attract toward P only {attractTicks}/{onN} ticks "
+                    + $"(need roman magnet edge attract, not Ambush Orb flat hold)";
+            if (peakDesDrop < 0.5f)
+                return $"zeromag:ON Dist(D/M,P) peak drop {peakDesDrop:F2} too small (no soft attract)";
+
+            // OFF: Dist(M,P) non-decreasing AND Desired not toward P / Dist(D,P) non-collapsing.
             var off = magnetOffHist.Take(offK).ToList();
             float? prev = null;
+            float? prevDes = null;
+            float desOff0 = Dist(
+                off[0].Members.First(x => x.InstanceId == memberId).DesiredPosition,
+                playerAt(off[0]));
             foreach (var h in off)
             {
                 var m = h.Members.FirstOrDefault(x => x.InstanceId == memberId && x.HasIntent);
@@ -721,88 +861,145 @@ namespace FactionTactics.Tests.Sim
                 var p = playerAt(h);
                 var dm = Dist(m.Position, p);
                 var dd = Dist(m.DesiredPosition, p);
-                if (dd < rLo)
-                    return $"zeromag:OFF Desired on P Dist(D,P)={dd:F1} < {rLo}";
+                if (dd < rLo * 0.5f)
+                    return $"zeromag:OFF Desired collapsed on P Dist(D,P)={dd:F1}";
+
+                // Desired not toward P: if D closer to P than M and moving in, fail.
+                var toP = Xz(p) - Xz(m.Position);
+                var toD = Xz(m.DesiredPosition) - Xz(m.Position);
+                if (toD.sqrMagnitude > 0.25f && toP.sqrMagnitude > 0.25f
+                    && Vector3.Dot(toD.normalized, toP.normalized) > 0.7f
+                    && dd + 1f < dm)
+                    return $"zeromag:OFF Desired still toward P Dist(D,P)={dd:F1} Dist(M,P)={dm:F1}";
+
                 if (prev.HasValue && dm + 0.05f < prev.Value)
                     return $"zeromag:OFF Dist(M,P) decreased {prev.Value:F1}→{dm:F1} (re-attracted with magnet off)";
+                if (prevDes.HasValue && dd + 0.25f < prevDes.Value && dd + 0.5f < desOff0)
+                    return $"zeromag:OFF Dist(D,P) collapsing {prevDes.Value:F1}→{dd:F1}";
                 prev = dm;
+                prevDes = dd;
             }
+
+            // Optional recover: OFF Dist(D,P) should not stay at the ON minimum collapse.
+            var lastOff = off[off.Count - 1].Members.First(x => x.InstanceId == memberId);
+            var ddLast = Dist(lastOff.DesiredPosition, playerAt(off[off.Count - 1]));
+            if (peakDesDrop >= 0.75f && ddLast + 0.5f < minDesOn)
+                return $"zeromag:OFF Dist(D,P)={ddLast:F1} did not recover from ON min={minDesOn:F1}";
 
             return null;
         }
 
         /// <summary>
-        /// (7) Theater geometry H7: Pin band tight + mean|Δφ|≤0.25; Flank band + half-plane ≥80%;
-        /// Harass outer; multi-tick Assign supporting Fact at caller.
+        /// (7) Theater geometry R2: SAME hist coengage ≥2 roles; Dist bands from Desired motion
+        /// (not planted Position freeze); Sign(pinLat)≠Sign(flankLat) ≥80%; Harass rear/outer quarter;
+        /// Assign(dt)×N is caller support only.
         /// </summary>
         public static string? TheaterPinFlankHarass(
-            IReadOnlyList<TickMetrics> pinHist,
-            IReadOnlyList<TickMetrics> flankHist,
-            IReadOnlyList<TickMetrics>? harassHist,
+            IReadOnlyList<TickMetrics> coengageHist,
+            IReadOnlyCollection<long> pinIds,
+            IReadOnlyCollection<long> flankIds,
+            IReadOnlyCollection<long>? harassIds,
             Func<TickMetrics, Vector3> focusAt,
             float pinRLo = 4f,
             float pinRHi = 12f,
             float flankRLo = 8f,
             float flankRHi = 22f,
-            float harassRLo = 14f,
+            float harassRLo = 10f,
             float bandFraction = 0.80f,
             float pinPhiMax = 0.25f,
             float playerPathMin = 10f,
             int minTicks = 16,
-            int warmup = 4)
+            int warmup = 4,
+            bool useDesired = true)
         {
-            if (pinHist == null || pinHist.Count < minTicks)
-                return $"theater: Pin N={pinHist?.Count ?? 0} < {minTicks}";
-            if (flankHist == null || flankHist.Count < minTicks)
-                return $"theater: Flank N={flankHist?.Count ?? 0} < {minTicks}";
+            if (coengageHist == null || coengageHist.Count < minTicks)
+                return $"theater: coengage N={coengageHist?.Count ?? 0} < {minTicks}";
+            if (pinIds == null || pinIds.Count == 0)
+                return "theater: pinIds empty";
+            if (flankIds == null || flankIds.Count == 0)
+                return "theater: flankIds empty";
 
-            var pathLen = PlayerPathLength(pinHist);
+            // R2: ≥2 roles present in SAME hist.
+            int roles = 1; // pin
+            roles += 1; // flank
+            if (harassIds != null && harassIds.Count > 0) roles++;
+            if (roles < 2)
+                return "theater: need ≥2 roles in SAME hist";
+
+            // Verify both role sets appear in hist members.
+            var anyPin = coengageHist.Any(h => h.Members.Any(m => pinIds.Contains(m.InstanceId)));
+            var anyFlank = coengageHist.Any(h => h.Members.Any(m => flankIds.Contains(m.InstanceId)));
+            if (!anyPin || !anyFlank)
+                return "theater: Pin and Flank must coengage in SAME PlayerPathSim hist";
+
+            var pathLen = PlayerPathLength(coengageHist);
             if (pathLen < playerPathMin)
                 return $"theater: player path {pathLen:F1}m < {playerPathMin}";
 
-            string? BandCheck(IReadOnlyList<TickMetrics> hist, float lo, float hi, string label)
+            Vector3 SamplePos(MemberTickMetric m) => useDesired ? m.DesiredPosition : m.Position;
+
+            string? BandCheck(IReadOnlyCollection<long> ids, float lo, float hi, string label)
             {
-                var steady = AfterWarmup(hist, warmup);
+                var steady = AfterWarmup(coengageHist, warmup);
                 int ok = 0, n = 0;
+                float travel = 0f;
+                Vector3? prevMean = null;
                 foreach (var h in steady)
                 {
                     var f = focusAt(h);
-                    foreach (var m in h.Members.Where(x => x.HasIntent))
+                    var mean = Vector3.zero;
+                    int c = 0;
+                    foreach (var m in h.Members.Where(x => x.HasIntent && ids.Contains(x.InstanceId)))
                     {
                         n++;
-                        var d = Dist(m.Position, f);
+                        var pos = SamplePos(m);
+                        var d = Dist(pos, f);
                         if (d >= lo && d <= hi) ok++;
+                        mean += Xz(pos);
+                        c++;
+                    }
+                    if (c > 0)
+                    {
+                        mean /= c;
+                        if (prevMean.HasValue)
+                            travel += Dist(prevMean.Value, mean);
+                        prevMean = mean;
                     }
                 }
                 if (n == 0) return $"theater:{label} no samples";
                 if ((float)ok / n < bandFraction)
                     return $"theater:{label} Dist band [{lo},{hi}] only {(float)ok / n:P0}";
+                // R2: Dist bands from motion (Desired travel), not planted freeze.
+                if (travel < 2f)
+                    return $"theater:{label} Desired/Position mean travel {travel:F1}m < 2 (planted freeze soft-pass)";
                 return null;
             }
 
-            var e = BandCheck(pinHist, pinRLo, pinRHi, "Pin");
+            var e = BandCheck(pinIds, pinRLo, pinRHi, "Pin");
             if (e != null) return e;
-            e = BandCheck(flankHist, flankRLo, flankRHi, "Flank");
+            e = BandCheck(flankIds, flankRLo, flankRHi, "Flank");
             if (e != null) return e;
-            if (harassHist != null)
+            if (harassIds != null && harassIds.Count > 0)
             {
-                e = BandCheck(harassHist, harassRLo, flankRHi + 10f, "Harass");
+                e = BandCheck(harassIds, harassRLo, flankRHi + 10f, "Harass");
                 if (e != null) return e;
             }
 
-            var pinSteady = AfterWarmup(pinHist, warmup);
+            var steady = AfterWarmup(coengageHist, warmup);
+
+            // Pin stable front: mean |Δφ| of Pin Desired about focus.
             float sumAbsDPhi = 0f;
             float? prev = null;
             int phiN = 0;
-            for (int i = 0; i < pinSteady.Count; i++)
+            for (int i = 0; i < steady.Count; i++)
             {
-                var h = pinSteady[i];
+                var h = steady[i];
                 var f = focusAt(h);
                 var mean = Vector3.zero;
                 int c = 0;
-                foreach (var m in h.Members.Where(x => x.HasIntent))
+                foreach (var m in h.Members.Where(x => x.HasIntent && pinIds.Contains(x.InstanceId)))
                 {
-                    mean += Xz(m.Position) - Xz(f);
+                    mean += Xz(SamplePos(m)) - Xz(f);
                     c++;
                 }
                 if (c == 0) continue;
@@ -822,46 +1019,142 @@ namespace FactionTactics.Tests.Sim
             if (meanDPhi > pinPhiMax)
                 return $"theater:Pin |Δφ| mean={meanDPhi:F3} > {pinPhiMax} (not stable front)";
 
-            int sameHalf = 0, halfN = 0;
-            var flankSteady = AfterWarmup(flankHist, warmup);
-            float? flankSign = null;
-            for (int i = 1; i < Math.Min(pinSteady.Count, flankSteady.Count); i++)
+            // R2: Sign(pinLat) ≠ Sign(flankLat) for ≥80% of ticks (opposite half-planes).
+            int opp = 0, halfN = 0;
+            for (int i = 1; i < steady.Count; i++)
             {
-                var f0 = focusAt(pinSteady[i - 1]);
-                var f1 = focusAt(pinSteady[i]);
+                var f0 = focusAt(steady[i - 1]);
+                var f1 = focusAt(steady[i]);
                 var forward = Delta(f0, f1);
                 if (forward.sqrMagnitude < 1e-4f) continue;
                 var right = Vector3.Cross(Vector3.up, forward.normalized);
 
-                Vector3 MeanOff(TickMetrics h)
+                Vector3 MeanOff(IReadOnlyCollection<long> ids, TickMetrics h)
                 {
                     var f = focusAt(h);
                     var sum = Vector3.zero;
                     int n = 0;
-                    foreach (var m in h.Members.Where(x => x.HasIntent))
+                    foreach (var m in h.Members.Where(x => x.HasIntent && ids.Contains(x.InstanceId)))
                     {
-                        sum += Xz(m.Position) - Xz(f);
+                        sum += Xz(SamplePos(m)) - Xz(f);
                         n++;
                     }
                     return n == 0 ? Vector3.zero : sum / n;
                 }
 
-                var pinLat = Vector3.Dot(MeanOff(pinSteady[i]), right);
-                var flankLat = Vector3.Dot(MeanOff(flankSteady[i]), right);
-                if (Math.Abs(flankLat - pinLat) < 3f)
-                    continue;
+                var pinLat = Vector3.Dot(MeanOff(pinIds, steady[i]), right);
+                var flankLat = Vector3.Dot(MeanOff(flankIds, steady[i]), right);
+                if (Math.Abs(pinLat) < 1.5f || Math.Abs(flankLat) < 1.5f)
+                    continue; // need clear half-plane signal
                 halfN++;
-                var sign = Math.Sign(flankLat);
-                if (flankSign == null) flankSign = sign;
-                if (sign == flankSign) sameHalf++;
+                if (Math.Sign(pinLat) != Math.Sign(flankLat))
+                    opp++;
             }
 
             if (halfN < 4)
-                return $"theater:Flank half-plane under-sampled ({halfN}) — packs not laterally separated";
-            if ((float)sameHalf / halfN < bandFraction)
-                return $"theater:Flank half-plane unstable {sameHalf}/{halfN}";
+                return $"theater: opposite half-plane under-sampled ({halfN}) — Pin/Flank not laterally separated";
+            if ((float)opp / halfN < bandFraction)
+                return $"theater: Sign(pinLat)≠Sign(flankLat) only {opp}/{halfN} (<{bandFraction:P0})";
+
+            // Harass rear/outer quarter vs player heading.
+            if (harassIds != null && harassIds.Count > 0)
+            {
+                int rearOk = 0, rearN = 0;
+                for (int i = 1; i < steady.Count; i++)
+                {
+                    var f0 = focusAt(steady[i - 1]);
+                    var f1 = focusAt(steady[i]);
+                    var forward = Delta(f0, f1);
+                    if (forward.sqrMagnitude < 1e-4f) continue;
+                    var fwd = forward.normalized;
+                    var right = Vector3.Cross(Vector3.up, fwd);
+                    foreach (var m in steady[i].Members.Where(x => x.HasIntent && harassIds.Contains(x.InstanceId)))
+                    {
+                        var off = Xz(SamplePos(m)) - Xz(f1);
+                        if (off.sqrMagnitude < 1f) continue;
+                        rearN++;
+                        var along = Vector3.Dot(off, fwd);   // rear = negative
+                        var lat = Math.Abs(Vector3.Dot(off, right));
+                        // Rear/outer quarter: behind heading OR outer lateral with Dist≥harassRLo.
+                        if (along <= 0f || (lat >= harassRLo * 0.6f && Dist(SamplePos(m), f1) >= harassRLo))
+                            rearOk++;
+                    }
+                }
+                if (rearN < 4)
+                    return $"theater:Harass rear/outer under-sampled ({rearN})";
+                if ((float)rearOk / rearN < bandFraction)
+                    return $"theater:Harass rear/outer quarter only {rearOk}/{rearN}";
+            }
 
             return null;
+        }
+
+        /// <summary>
+        /// Legacy overload kept for transitional callers — forwards to SAME-hist API when pin/flank hists given separately (merges by tick index). Prefer single coengage hist.
+        /// </summary>
+        public static string? TheaterPinFlankHarass(
+            IReadOnlyList<TickMetrics> pinHist,
+            IReadOnlyList<TickMetrics> flankHist,
+            IReadOnlyList<TickMetrics>? harassHist,
+            Func<TickMetrics, Vector3> focusAt,
+            float pinRLo = 4f,
+            float pinRHi = 12f,
+            float flankRLo = 8f,
+            float flankRHi = 22f,
+            float harassRLo = 14f,
+            float bandFraction = 0.80f,
+            float pinPhiMax = 0.25f,
+            float playerPathMin = 10f,
+            int minTicks = 16,
+            int warmup = 4)
+        {
+            // Soft-pass path: separate planted hists. Merge into synthetic coengage and require opposite signs —
+            // but planted freeze still fails travel check when useDesired sees no motion.
+            if (pinHist == null || flankHist == null)
+                return "theater: pin/flank hist null";
+            var n = Math.Min(pinHist.Count, flankHist.Count);
+            if (harassHist != null) n = Math.Min(n, harassHist.Count);
+            var combined = new List<TickMetrics>(n);
+            var pinIds = new HashSet<long>();
+            var flankIds = new HashSet<long>();
+            var harassIds = new HashSet<long>();
+            for (int i = 0; i < n; i++)
+            {
+                var h = new TickMetrics
+                {
+                    TickIndex = pinHist[i].TickIndex,
+                    Time = pinHist[i].Time,
+                    HasSticky = pinHist[i].HasSticky,
+                    StickyId = pinHist[i].StickyId,
+                    StickyPosition = pinHist[i].StickyPosition,
+                    PackCentroid = pinHist[i].PackCentroid,
+                };
+                h.PlayerPositions.AddRange(pinHist[i].PlayerPositions);
+                foreach (var m in pinHist[i].Members)
+                {
+                    h.Members.Add(m);
+                    pinIds.Add(m.InstanceId);
+                }
+                foreach (var m in flankHist[i].Members)
+                {
+                    // Remap flank ids if collision (shouldn't with FakeSnapshots).
+                    h.Members.Add(m);
+                    flankIds.Add(m.InstanceId);
+                }
+                if (harassHist != null)
+                {
+                    foreach (var m in harassHist[i].Members)
+                    {
+                        h.Members.Add(m);
+                        harassIds.Add(m.InstanceId);
+                    }
+                }
+                combined.Add(h);
+            }
+            return TheaterPinFlankHarass(
+                combined, pinIds, flankIds, harassIds.Count > 0 ? harassIds : null, focusAt,
+                pinRLo, pinRHi, flankRLo, flankRHi, harassRLo, bandFraction, pinPhiMax,
+                playerPathMin, minTicks, warmup, useDesired: true);
         }
 
         public static void Require(string? error, string claim)
