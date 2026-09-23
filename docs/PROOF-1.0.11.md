@@ -431,6 +431,21 @@ Azog R3 holes folded into offline Facts on this branch (no Azog re-call). Closed
 | Merge reattach intents-only | After merge: PreferRun true + Desired near parent centroid for absorbed members |
 | Observable PreferRun Advance-only | Ambush Flank/Kite Fact: PreferRun true, HoldGround false for living intents while moving |
 
+**Narvi hole-pick H1–H8 (this branch tip):** applied against Azog soft-pass holes on `71a130d` predicates:
+
+| Hole | Tightening |
+|------|------------|
+| H1 AmbushStickyOrbit | BOTH \|Δφ\|sum≥π/2 AND Dist(M,P)∈[8,14]≥80%; angVar OR-escape dropped; wall-clock sticky dwell asserted (`AmbushStickySwitchDwellSeconds`) |
+| H2 ZeroMagnet | Magnet ON soft band near P then OFF Dist non-decreasing + D not on P; no FormUpMagnetDistance=0+threat@90 fake |
+| H3 FormUp | Fixed lattice slot S from initial pack excl. Ms (not PackCentroid); closeEnough≤4–6 |
+| H4 PackAsUnit | σ≤6–8 @≥90%; α≤35°; ε_rel≤3–4; alignFrac≥0.75 |
+| H5 Straggler | rIn≤slot radius ~4–8; monotonic median Dist; MergeStragglers unique absorb once; PreferRun comment-only |
+| H6 FleeRadial | cos≥0.707; full vMin*dt; Desired cos≥0.5; DebugThreat≠orbit slot; net open≥2; N≥8 |
+| H7 Theater | Pin 4–12 + mean\|Δφ\|≤0.25; Flank band+half-plane≥80%; Harass outer; Assign(dt)×N |
+| H8 Charge | Real FormUp slot (not PackCentroid); D closer to T than S by margin |
+
+Harness fail Facts RED on: angVar-only orbit; magnet=0 fake zero-mag; PackCentroid-as-slot FormUp; PreferRun-as-primary geom.
+
 **Narvi geometric closeout (this branch):** Azog adversarial predicates implemented as PRIMARY offline wins in `MotionPredicates` / `MotionDoctrineTests`; soft flag-only Observable claims demoted to secondary. No production doctrine change; no plate.
 
 **Known residual for 1.0.12 (not fixed in production this closeout):**

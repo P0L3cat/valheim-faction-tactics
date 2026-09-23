@@ -97,12 +97,18 @@ namespace FactionTactics.Tests
             var ambush = registry.GetById("ambush")!;
             var squad = FakeSnapshots.MakeSquad(ambush, 5, "Greydwarf");
             for (int i = 0; i < squad.Members.Count; i++)
-                squad.Members[i].Position = new Vector3(i * 2f, 0f, 0f);
+                squad.Members[i].Position = new Vector3(20f + i * 0.4f, 0f, 0.2f * i);
 
             var player = SimPlayer.Waypoints(
                 42,
-                new[] { new Vector3(8f, 0f, 0f), new Vector3(80f, 0f, 0f) },
-                segmentSeconds: 20f);
+                new[]
+                {
+                    new Vector3(8f, 0f, 0f),
+                    new Vector3(36f, 0f, 0f),
+                    new Vector3(36f, 0f, 24f),
+                    new Vector3(8f, 0f, 24f),
+                },
+                segmentSeconds: 4f);
 
             var runtime = new SquadRuntimeState();
             var sim = new PlayerPathSim()
@@ -118,13 +124,13 @@ namespace FactionTactics.Tests
                     Stance = StanceType.Aggressive,
                 });
 
-            const int ticks = 40;
+            const int ticks = 64;
             var hist = sim.Run(ticks);
 
             MotionPredicates.Require(
                 MotionPredicates.AmbushStickyOrbit(
-                    hist, rLo: 3f, rHi: 24f, bandFraction: 0.70f, flapsMax: 0,
-                    phiMin: 0.5f, angVarMin: 0.04f, playerPathMin: 6f, minTicks: 16, warmup: 4),
+                    hist, rLo: 8f, rHi: 14f, bandFraction: 0.80f, flapsMax: 0,
+                    phiMin: MotionPredicates.PiOverTwo, angVarAndMin: null, playerPathMin: 6f, minTicks: 16, warmup: 4),
                 "Ambush_orbit_tracks_moving_sticky");
 
             Assert.True(hist.All(h => h.HasSticky), "sticky must stay acquired along the walk");
@@ -143,9 +149,10 @@ namespace FactionTactics.Tests
             }
 
             var earlyStickyX = hist[4].StickyPosition.x;
+            var mid = hist[hist.Count / 2];
+            Assert.True(mid.StickyPosition.x > earlyStickyX + 10f || mid.StickyPosition.z > 5f,
+                $"player path did not translate enough mid=({mid.StickyPosition.x:F1},{mid.StickyPosition.z:F1}) earlyX={earlyStickyX}");
             var late = hist[hist.Count - 1];
-            Assert.True(late.StickyPosition.x > earlyStickyX + 30f,
-                $"player path did not advance enough lateX={late.StickyPosition.x} earlyX={earlyStickyX}");
             var meanSlotX = late.Members.Where(m => m.HasIntent).Average(m => m.DesiredPosition.x);
             Assert.True(Math.Abs(meanSlotX - late.StickyPosition.x) < 16f,
                 $"slots lagged sticky: meanSlotX={meanSlotX:F1} stickyX={late.StickyPosition.x:F1} "
@@ -204,7 +211,7 @@ namespace FactionTactics.Tests
             var farId = squad.Members[4].InstanceId;
             MotionPredicates.Require(
                 MotionPredicates.StragglerMerge(
-                    hist, farId, rOut: 20f, rIn: 16f, rPack: 22f, lastK: 4, minTicks: 10),
+                    hist, farId, rOut: 18f, rIn: 7f, rPack: 12f, lastK: 4, minTicks: 10),
                 "PackAsUnit_chase_straggler");
 
             var d0 = hist[0].PackDiameter;

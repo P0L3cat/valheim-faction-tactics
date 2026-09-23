@@ -120,14 +120,16 @@ namespace FactionTactics.Tests
             var ambush = registry.GetById("ambush")!;
             var squad = FakeSnapshots.MakeSquad(ambush, 5, "Greydwarf");
             for (int i = 0; i < squad.Members.Count; i++)
-                squad.Members[i].Position = new Vector3(8f + i, 0f, 0f);
+                squad.Members[i].Position = new Vector3(18f + i * 0.3f, 0f, 0.2f * i);
 
             var player = SimPlayer.Waypoints(101, new[]
             {
-                new Vector3(0f, 0f, 0f),
-                new Vector3(30f, 0f, 0f),
-                new Vector3(30f, 0f, 30f),
-            }, 2.0f);
+                new Vector3(8f, 0f, 0f),
+                new Vector3(20f, 0f, 0f),
+                new Vector3(20f, 0f, 12f),
+                new Vector3(8f, 0f, 12f),
+                new Vector3(8f, 0f, 0f),
+            }, 3.5f);
 
             var hist = new PlayerPathSim()
                 .WithDt(0.25f)
@@ -141,7 +143,7 @@ namespace FactionTactics.Tests
                     Formation = FormationType.Orb,
                     Stance = StanceType.Aggressive,
                 })
-                .Run(32);
+                .Run(80);
 
             Assert.True(hist.Count >= 16);
 
@@ -149,12 +151,12 @@ namespace FactionTactics.Tests
             MotionPredicates.Require(
                 MotionPredicates.AmbushStickyOrbit(
                     hist,
-                    rLo: 3f,
-                    rHi: 24f,
-                    bandFraction: 0.70f,
+                    rLo: 8f,
+                    rHi: 14f,
+                    bandFraction: 0.80f,
                     flapsMax: 0,
-                    phiMin: 0.6f,
-                    angVarMin: 0.05f,
+                    phiMin: MotionPredicates.PiOverTwo,
+                    angVarAndMin: null,
                     playerPathMin: 6f,
                     minTicks: 16,
                     warmup: 6),
@@ -232,7 +234,9 @@ namespace FactionTactics.Tests
             var registry = DoctrinePackRegistry.CreateDefault();
             var roman = registry.GetById("roman")!;
             var squad = FakeSnapshots.MakeSquad(roman, 4, "Skeleton");
-            squad.Members[3].Position = new Vector3(45f, 0f, 0f);
+            for (int i = 0; i < 3; i++)
+                squad.Members[i].Position = new Vector3(i * 1.4f, 0f, 0f);
+            squad.Members[3].Position = new Vector3(36f, 0f, 0f);
             var farId = squad.Members[3].InstanceId;
 
             var player = SimPlayer.Parametric(7, t => new Vector3(5f + t * 4f, 0f, 0f));
@@ -248,12 +252,12 @@ namespace FactionTactics.Tests
                     Formation = FormationType.ShieldWall,
                     Stance = StanceType.Aggressive,
                 })
-                .Run(24);
+                .Run(40);
 
             // PRIMARY: Azog straggler merge (Position closes; reject frozen body + soft Desired).
             MotionPredicates.Require(
                 MotionPredicates.StragglerMerge(
-                    hist, farId, rOut: 20f, rIn: 15f, rPack: 18f, lastK: 4, minTicks: 10),
+                    hist, farId, rOut: 18f, rIn: 7f, rPack: 10f, lastK: 4, minTicks: 10),
                 "PROOF-claim-3-straggler");
 
             // Secondary: PreferRun / Desired near centroid.
@@ -285,14 +289,16 @@ namespace FactionTactics.Tests
             {
                 var squad = FakeSnapshots.MakeSquad(ambush, 5, "Greydwarf");
                 for (int i = 0; i < squad.Members.Count; i++)
-                    squad.Members[i].Position = new Vector3(6f + i * 0.5f, 0f, 2f);
+                    squad.Members[i].Position = new Vector3(16f + i * 0.3f, 0f, 0.2f * i);
 
                 var player = SimPlayer.Waypoints(101, new[]
                 {
-                    new Vector3(0f, 0f, 0f),
+                    new Vector3(6f, 0f, 0f),
                     new Vector3(18f, 0f, 0f),
-                    new Vector3(18f, 0f, 18f),
-                }, 2.0f);
+                    new Vector3(18f, 0f, 12f),
+                    new Vector3(6f, 0f, 12f),
+                    new Vector3(6f, 0f, 0f),
+                }, 3.5f);
 
                 var hist = new PlayerPathSim()
                     .WithDt(0.25f)
@@ -306,18 +312,18 @@ namespace FactionTactics.Tests
                         Formation = FormationType.Orb,
                         Stance = StanceType.Aggressive,
                     })
-                    .Run(28);
+                    .Run(80);
 
                 // PRIMARY: Position orbit band vs sticky while player walks (not PreferRun-only).
                 MotionPredicates.Require(
                     MotionPredicates.AmbushStickyOrbit(
                         hist,
-                        rLo: 2.5f,
-                        rHi: 26f,
-                        bandFraction: 0.65f,
+                        rLo: 8f,
+                        rHi: 14f,
+                        bandFraction: 0.80f,
                         flapsMax: 0,
-                        phiMin: 0.4f,
-                        angVarMin: 0.04f,
+                        phiMin: MotionPredicates.PiOverTwo,
+                        angVarAndMin: null,
                         playerPathMin: 5f,
                         minTicks: 16,
                         warmup: 4),

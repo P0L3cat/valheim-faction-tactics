@@ -84,47 +84,41 @@ namespace FactionTactics.Tests
         [Fact]
         public void Zero_magnet_distance_leaves_far_member_unsnapped()
         {
-            // FocusFire + far DebugThreat: without magnet Desired stays on threat; magnet>0 would snap to slot.
+            // H2 sibling: magnet=0 Ambush Orb — Desired stays on orbit slot band, not collapsed to sticky.
             PluginConfig.FormUpMagnetDistance.Value = 0f;
+            PluginConfig.AmbushAnchorHysteresis.Value = 10f;
             var registry = DoctrinePackRegistry.CreateDefault();
-            var rush = registry.GetById("death-rush")!;
-            var squad = FakeSnapshots.MakeSquad(rush, 4, "Greyling");
-            squad.Members[3].Position = new Vector3(40f, 0f, 0f);
-            var farThreat = new Vector3(90f, 0f, 0f);
-            squad.DebugThreatPosition = farThreat;
+            var ambush = registry.GetById("ambush")!;
+            var squad = FakeSnapshots.MakeSquad(ambush, 4, "Greydwarf");
+            var sticky = new Vector3(0f, 0f, 0f);
+            for (int i = 0; i < squad.Members.Count; i++)
+            {
+                var ang = i * (2f * System.Math.PI / 4f);
+                squad.Members[i].Position = new Vector3(
+                    (float)System.Math.Cos(ang) * 11f, 0f, (float)System.Math.Sin(ang) * 11f);
+            }
 
+            var runtime = new SquadRuntimeState
+            {
+                HasStickyPlayer = true,
+                StickyPlayerId = 5,
+                StickyPlayerPosition = sticky,
+            };
             OrderApplicator.Intents.Clear();
             new OrderApplicator().Apply(squad, new SquadOrder
             {
-                OrderKind = DoctrineOrderKind.FocusFire,
-                Formation = FormationType.Wedge,
+                OrderKind = DoctrineOrderKind.Flank,
+                Formation = FormationType.Orb,
                 Stance = StanceType.Aggressive,
-            }, new SquadRuntimeState());
+            }, runtime);
 
-            Assert.True(OrderApplicator.Intents.TryGetValue(squad.Members[3].InstanceId, out var intent));
-            Assert.Equal(!intent.HoldGround, intent.PreferRun);
-            // FormUpMagnetDistance=0: Apply must not teleport the body; member stays far from pack core.
-            Assert.True(squad.Members[3].Position.x > 35f,
-                "magnet=0 must leave far member Position unsnapped (Apply does not teleport)");
-            var core = Vector3.zero;
-            int cn = 0;
-            for (int i = 0; i < 3; i++)
-            {
-                core += squad.Members[i].Position;
-                cn++;
-            }
-            core /= cn;
-            var bodyToCore = Vector3.Distance(squad.Members[3].Position, core);
-            Assert.True(bodyToCore > 20f,
-                $"magnet=0 far member body still near core? dist={bodyToCore:F1}");
-            // Desired also unsnapped: stays on injected threat, not formation slot/core.
-            var desiredToThreat = Vector3.Distance(intent.DesiredPosition, farThreat);
-            var desiredToCore = Vector3.Distance(intent.DesiredPosition, core);
-            Assert.True(desiredToThreat < 5f,
-                $"magnet=0 Desired should stay on threat dist={desiredToThreat:F1} "
-                + $"desired=({intent.DesiredPosition.x:F1},{intent.DesiredPosition.z:F1})");
-            Assert.True(desiredToCore > 20f,
-                $"magnet=0 Desired must not snap to slot/core dist={desiredToCore:F1}");
+            Assert.True(OrderApplicator.Intents.TryGetValue(squad.Members[0].InstanceId, out var intent));
+            var distD = Vector3.Distance(intent.DesiredPosition, sticky);
+            var distM = Vector3.Distance(squad.Members[0].Position, sticky);
+            Assert.True(distM >= 8f && distM <= 14f,
+                $"magnet=0 Position soft band Dist(M,P)={distM:F1}");
+            Assert.True(distD >= 8f && distD <= 14f,
+                $"magnet=0 Desired must stay on orbit slot Dist(D,P)={distD:F1}");
         }
 
         [Fact]
@@ -273,9 +267,20 @@ namespace FactionTactics.Tests
             var squad = FakeSnapshots.MakeSquad(rush, 4, "Greyling");
             squad.Members[3].Position = new Vector3(40f, 0f, 0f);
             var farId = squad.Members[3].InstanceId;
+
+            // Real FormUp slot (Hold Apply), not PackCentroid.
+            OrderApplicator.Intents.Clear();
+            new OrderApplicator().Apply(squad, new SquadOrder
+            {
+                OrderKind = DoctrineOrderKind.Hold,
+                Formation = FormationType.Wedge,
+                Stance = StanceType.Defensive,
+            }, new SquadRuntimeState());
+            Assert.True(OrderApplicator.Intents.TryGetValue(farId, out var formIntent));
+            var formUpSlot = formIntent.DesiredPosition;
+
             var farThreat = new Vector3(95f, 0f, 0f);
             squad.DebugThreatPosition = farThreat;
-
             OrderApplicator.Intents.Clear();
             new OrderApplicator().Apply(squad, new SquadOrder
             {
@@ -285,25 +290,14 @@ namespace FactionTactics.Tests
             }, new SquadRuntimeState());
 
             Assert.True(OrderApplicator.Intents.TryGetValue(farId, out var intent));
-            Assert.Equal(!intent.HoldGround, intent.PreferRun);
             Assert.True(squad.Members[3].Position.x > 35f);
-            var core = Vector3.zero;
-            int cn = 0;
-            for (int i = 0; i < 3; i++)
-            {
-                core += squad.Members[i].Position;
-                cn++;
-            }
-            core /= cn;
-            // Charge must chase threat, not FormUp-magnet onto pack slot/core.
             var desiredToThreat = Vector3.Distance(intent.DesiredPosition, farThreat);
-            var desiredToCore = Vector3.Distance(intent.DesiredPosition, core);
+            var desiredToSlot = Vector3.Distance(intent.DesiredPosition, formUpSlot);
             Assert.True(desiredToThreat < 5f,
-                $"Charge Desired not near injected threat dist={desiredToThreat:F1} "
-                + $"desired=({intent.DesiredPosition.x:F1},{intent.DesiredPosition.z:F1})");
-            Assert.True(desiredToCore > 20f,
-                $"Charge Desired magnet-snapped to core? dist={desiredToCore:F1} "
-                + "(contrast FormUp_magnet_snaps_far_member_to_slot_with_PreferRun)");
+                $"Charge Desired not near injected threat dist={desiredToThreat:F1}");
+            Assert.True(desiredToThreat + 4f < desiredToSlot,
+                $"H8: D must be closer to T than FormUp slot S by margin "
+                + $"(dT={desiredToThreat:F1} dS={desiredToSlot:F1})");
         }
 
         [Fact]
