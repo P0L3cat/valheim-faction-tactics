@@ -1,8 +1,8 @@
 {
   "name": "FactionTactics_Client",
-  "version_number": "1.0.7",
+  "version_number": "1.0.8",
   "website_url": "https://github.com/P0L3cat/valheim-faction-tactics",
-  "description": "Client executor for Faction Tactics 1.0.7: applies server RPC intents (ZDO fallback) with local ownership for smooth combat. Requires matching Server 1.0.7.",
+  "description": "Client executor for Faction Tactics 1.0.8: applies server RPC intents (ZDO fallback) with local ownership for smooth combat. Requires matching Server 1.0.8.",
   "dependencies": [
     "denikson-BepInExPack_Valheim-5.4.2202"
   ]

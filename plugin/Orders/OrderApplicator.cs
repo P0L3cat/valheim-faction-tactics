@@ -25,9 +25,11 @@ namespace FactionTactics.Orders
         public static readonly System.Collections.Concurrent.ConcurrentDictionary<long, MemberIntent> Intents
             = new System.Collections.Concurrent.ConcurrentDictionary<long, MemberIntent>();
 
-        public void Apply(SquadUnit squad, SquadOrder order, Squad.SquadRuntimeState? runtime = null)
+        public void Apply(SquadUnit squad, SquadOrder order, SquadRuntimeState? runtime = null)
         {
             var centroid = ComputeCentroid(squad);
+            var formationOrigin = centroid;
+
             var doctrineId = squad.Doctrine?.Id ?? "";
             var jelly = string.Equals(doctrineId, "artillery-jelly", System.StringComparison.OrdinalIgnoreCase);
             var charred = string.Equals(doctrineId, "charred-legion", System.StringComparison.OrdinalIgnoreCase);
@@ -68,6 +70,24 @@ namespace FactionTactics.Orders
 
             var distToThreat = ResolveThreatDistance(squad, runtime);
 
+            // 1.0.8 Ambush: Orb/Skirmish around sticky player (hysteresis), not member centroid.
+            if (ambush && runtime != null)
+            {
+                UpdateAmbushStickyAnchor(runtime, centroid);
+                var usePlayerAnchor = runtime.HasStickyPlayer
+                    && (order.OrderKind == DoctrineOrderKind.Flank
+                        || order.OrderKind == DoctrineOrderKind.Kite
+                        || order.OrderKind == DoctrineOrderKind.FocusFire
+                        || order.OrderKind == DoctrineOrderKind.ProtectMissiles
+                        || order.OrderKind == DoctrineOrderKind.Hold);
+                if (usePlayerAnchor)
+                {
+                    formationOrigin = runtime.StickyPlayerPosition;
+                    BuildFacingBasis(formationOrigin, threatPos, out right, out forward);
+                }
+            }
+
+
             var fallbackIndex = 0;
             foreach (var member in squad.Members)
             {
@@ -94,7 +114,7 @@ namespace FactionTactics.Orders
                     member.AssignedRole,
                     slotIndex,
                     capacity,
-                    centroid,
+                    formationOrigin,
                     member.Position,
                     isCavalry,
                     isArtillery || jelly,
@@ -259,12 +279,8 @@ namespace FactionTactics.Orders
                     DesiredPosition = desired,
                     FocusTargetId = order.FocusTargetId,
                     HoldGround = holdGround,
-                    PreferRun = order.OrderKind == DoctrineOrderKind.Charge
-                                || order.OrderKind == DoctrineOrderKind.RetreatAndReform
-                                || order.OrderKind == DoctrineOrderKind.Kite
-                                || isCavalry
-                                || isWallBreaker
-                                || deathRush,
+                    // 1.0.8: PreferRun on for ALL movement; false only when HoldGround plants.
+                    PreferRun = !holdGround,
                     AllowVanillaChase = allowChase,
                     PreferKeepRange = keepRange,
                     AssaultWallBreaker = isWallBreaker,
@@ -556,7 +572,7 @@ namespace FactionTactics.Orders
                 case FormationType.Orb:
                     {
                         var angle = (float)(index * (2 * System.Math.PI / System.Math.Max(1, count)));
-                        float radius = artilleryRear ? 6.5f : 4f;
+                        float radius = artilleryRear ? 9f : 11f; // 1.0.8 Ambush orbit mid Inner/Outer (~11m)
                         return centroid + new Vector3(
                             (float)System.Math.Cos(angle) * radius,
                             0f,
@@ -634,6 +650,103 @@ namespace FactionTactics.Orders
             _ = centroid;
             return null;
 #endif
+        }
+
+
+        /// <summary>
+        /// 1.0.8 Ambush sticky player anchor with hysteresis.
+        /// Switch only when a new nearest is AmbushAnchorHysteresis meters closer, or sticky missing/OOR.
+        /// </summary>
+        public static void UpdateAmbushStickyAnchor(
+            SquadRuntimeState state,
+            Vector3 squadCentroid,
+            System.Collections.Generic.IReadOnlyList<(long id, Vector3 pos)>? players = null)
+        {
+            var hysteresis = PluginConfig.AmbushAnchorHysteresis?.Value ?? 10f;
+            var outer = PluginConfig.AmbushOuterPocket?.Value ?? 18f;
+            var maxRange = System.Math.Max(outer * 2f, PluginConfig.DiscoveryRadius?.Value ?? 64f);
+
+            var candidates = new System.Collections.Generic.List<(long id, Vector3 pos)>();
+            if (players != null && players.Count > 0)
+            {
+                foreach (var p in players)
+                    candidates.Add(p);
+            }
+            else
+            {
+#if VALHEIM_REFS
+                try
+                {
+                    long serial = 1;
+                    foreach (var pos in FactionTactics.Util.ValheimWorldScan.CollectPlayerPositions())
+                    {
+                        var id = (long)(System.Math.Round(pos.x) * 100000L + System.Math.Round(pos.z));
+                        if (id == 0) id = serial;
+                        candidates.Add((id, pos));
+                        serial++;
+                    }
+                }
+                catch { /* no players */ }
+#endif
+            }
+
+            if (candidates.Count == 0)
+            {
+                // Keep last sticky so Ambush can still orbit a known player while scanners are empty
+                // (unit tests + brief dedicated gaps). Live refresh happens when candidates reappear.
+                return;
+            }
+
+            long nearestId = candidates[0].id;
+            Vector3 nearestPos = candidates[0].pos;
+            float nearestDist = Vector3.Distance(squadCentroid, nearestPos);
+            for (int i = 1; i < candidates.Count; i++)
+            {
+                var d = Vector3.Distance(squadCentroid, candidates[i].pos);
+                if (d < nearestDist)
+                {
+                    nearestDist = d;
+                    nearestId = candidates[i].id;
+                    nearestPos = candidates[i].pos;
+                }
+            }
+
+            if (!state.HasStickyPlayer)
+            {
+                state.HasStickyPlayer = true;
+                state.StickyPlayerId = nearestId;
+                state.StickyPlayerPosition = nearestPos;
+                return;
+            }
+
+            bool stickyAlive = false;
+            Vector3 stickyPos = state.StickyPlayerPosition;
+            float stickyDist = float.MaxValue;
+            foreach (var c in candidates)
+            {
+                if (c.id == state.StickyPlayerId)
+                {
+                    stickyAlive = true;
+                    stickyPos = c.pos;
+                    stickyDist = Vector3.Distance(squadCentroid, stickyPos);
+                    break;
+                }
+            }
+
+            if (!stickyAlive || stickyDist > maxRange)
+            {
+                state.StickyPlayerId = nearestId;
+                state.StickyPlayerPosition = nearestPos;
+                state.HasStickyPlayer = true;
+                return;
+            }
+
+            state.StickyPlayerPosition = stickyPos;
+            if (nearestId != state.StickyPlayerId && nearestDist + 0.01f < stickyDist - hysteresis)
+            {
+                state.StickyPlayerId = nearestId;
+                state.StickyPlayerPosition = nearestPos;
+            }
         }
 
         private static bool Contains(string? name, string token)

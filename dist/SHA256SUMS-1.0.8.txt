@@ -1,0 +1,2 @@
+a2ce7b5632d1d43384fc4c8089e12f0c8bfefc3f671f06877014b89fbe3dbdba  FactionTactics.dll
+2d7d11df6f63c0705a781bcb951401a56ab74ad9ad3739d4e3e86acd7e7f8513  FactionTactics.Client.dll

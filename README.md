@@ -1,8 +1,8 @@
 # Faction Tactics
 
-**1.0.7 hybrid:** server commander (`FactionTactics.dll`) + client executor (`FactionTactics.Client.dll`). HoldGround is rare. Romans advance to a ~20m standoff, hold 1–15s, press until the front line is in swing range, then hold; if the player opens the gap they pause 1s and press again. Vikings use the same cadence on a tighter ~12–15m line. Advance never pins HoldGround just for standing on a slot. Ambush and Death-Rush do not plant. Phase A swing gate and Phase B dwell stay.
+**1.0.8 hybrid:** server commander (`FactionTactics.dll`) + client executor (`FactionTactics.Client.dll`). HoldGround is rare. Romans advance to a ~20m standoff, hold 1–15s, press until the front line is in swing range, then hold; if the player opens the gap they pause 1s and press again. Vikings use the same cadence on a tighter ~12–15m line. Advance never pins HoldGround just for standing on a slot. Ambush and Death-Rush do not plant. Phase A swing gate and Phase B dwell stay.
 
-## Quick install (1.0.7)
+## Quick install (1.0.8)
 
 Admin console: `ft help` / `ft set <key> <value>` on dedicated, listen-host, **or client F5 as admin** (RPC to dedicated — see `docs/CONSOLE-KNOBS.md`). Cadence knobs: `RomanStandoffDistance`, `RomanStandoffHoldMin`, `RomanStandoffHoldMax`, `RomanContactSwingRange`, `RomanRetreatPauseSeconds`, and the matching `Viking*` keys.
 

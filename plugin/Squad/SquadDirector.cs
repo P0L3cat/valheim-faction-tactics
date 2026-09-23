@@ -151,7 +151,7 @@ namespace FactionTactics.Squad
         private void TickCore(float dt)
         {
             _active.Clear();
-            var discovered = _discovery.Discover();
+            var discovered = MergeStragglers(_discovery.Discover());
             _lastDiscoveredCount = discovered.Count;
             var seen = new HashSet<SquadRuntimeState>();
 
@@ -707,6 +707,96 @@ namespace FactionTactics.Squad
         }
 
         /// <summary>Per-doctrine min roster. Death-Rush defaults to 1 (tiny Meadows packs).</summary>
+
+        /// <summary>
+        /// 1.0.8: fold below-MinSquadSize same-doctrine clusters into the nearest active
+        /// (≥minSize) same-doctrine parent within SquadMergeRadius. Isolated stragglers stay vanilla.
+        /// </summary>
+        internal static System.Collections.Generic.List<SquadUnit> MergeStragglers(
+            System.Collections.Generic.IReadOnlyList<SquadUnit> discovered)
+        {
+            var list = new System.Collections.Generic.List<SquadUnit>(discovered);
+            if (list.Count <= 1)
+                return list;
+
+            var mergeRadius = PluginConfig.SquadMergeRadius?.Value ?? 40f;
+            if (mergeRadius <= 0f)
+                return list;
+
+            var parents = new System.Collections.Generic.List<SquadUnit>();
+            var stragglers = new System.Collections.Generic.List<SquadUnit>();
+            foreach (var s in list)
+            {
+                var doctrineId = s.Doctrine?.Id ?? "";
+                var minSize = EffectiveMinSize(doctrineId);
+                if (CountAlive(s) >= minSize)
+                    parents.Add(s);
+                else
+                    stragglers.Add(s);
+            }
+
+            if (parents.Count == 0 || stragglers.Count == 0)
+                return list;
+
+            var absorbed = new System.Collections.Generic.HashSet<SquadUnit>();
+            foreach (var stray in stragglers)
+            {
+                var doctrineId = stray.Doctrine?.Id ?? "";
+                var strayCentroid = ComputeSquadCentroid(stray);
+                SquadUnit? best = null;
+                float bestDist = float.MaxValue;
+                foreach (var parent in parents)
+                {
+                    if (!string.Equals(parent.Doctrine?.Id, doctrineId, System.StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    var d = Vector3.Distance(strayCentroid, ComputeSquadCentroid(parent));
+                    if (d <= mergeRadius && d < bestDist)
+                    {
+                        bestDist = d;
+                        best = parent;
+                    }
+                }
+                if (best == null)
+                    continue;
+                foreach (var m in stray.Members)
+                    best.Members.Add(m);
+                absorbed.Add(stray);
+            }
+
+            if (absorbed.Count == 0)
+                return list;
+
+            var merged = new System.Collections.Generic.List<SquadUnit>(list.Count - absorbed.Count);
+            foreach (var s in list)
+            {
+                if (!absorbed.Contains(s))
+                    merged.Add(s);
+            }
+            return merged;
+        }
+
+        internal static Vector3 ComputeSquadCentroid(SquadUnit squad)
+        {
+            var sum = Vector3.zero;
+            int n = 0;
+            foreach (var m in squad.Members)
+            {
+                if (!m.IsAlive)
+                    continue;
+                sum += m.Position;
+                n++;
+            }
+            if (n == 0)
+            {
+                foreach (var m in squad.Members)
+                {
+                    sum += m.Position;
+                    n++;
+                }
+            }
+            return n > 0 ? sum / n : Vector3.zero;
+        }
+
         public static int EffectiveMinSize(string? doctrineId)
         {
             var global = PluginConfig.MinSquadSize?.Value ?? 3;

@@ -18,6 +18,7 @@ namespace FactionTactics.Config
         public static ConfigEntry<int> MinSquadSize { get; private set; } = null!;
         public static ConfigEntry<float> DiscoveryRadius { get; private set; } = null!;
         public static ConfigEntry<float> SquadClusterRadius { get; private set; } = null!;
+        public static ConfigEntry<float> SquadMergeRadius { get; private set; } = null!;
         public static ConfigEntry<bool> EnableRoman { get; private set; } = null!;
         public static ConfigEntry<float> RomanChargeRange { get; private set; } = null!;
         public static ConfigEntry<bool> RomanPreferRanged { get; private set; } = null!;
@@ -98,6 +99,7 @@ namespace FactionTactics.Config
         public static ConfigEntry<float> AmbushOuterPocket { get; private set; } = null!;
         public static ConfigEntry<float> AmbushInnerBand { get; private set; } = null!;
         public static ConfigEntry<float> AmbushReEncircleGap { get; private set; } = null!;
+        public static ConfigEntry<float> AmbushAnchorHysteresis { get; private set; } = null!;
 
 
         private static readonly object BindGate = new object();
@@ -139,6 +141,13 @@ namespace FactionTactics.Config
                 "SquadClusterRadius",
                 18f,
                 "Max distance between members to belong to the same squad cluster.");
+
+            SquadMergeRadius = config.Bind(
+                "Squad",
+                "SquadMergeRadius",
+                40f,
+                "Below-MinSquadSize same-doctrine clusters within this radius of an active (≥MinSquadSize) "
+                + "same-doctrine squad merge into that parent so stragglers FormUp instead of vanilla wandering.");
 
             EnableRoman = config.Bind(
                 "Doctrine",
@@ -358,6 +367,13 @@ namespace FactionTactics.Config
                 14f,
                 "Ambush: after Kite, re-encircle (Flank) once gap exceeds this (m).");
 
+            AmbushAnchorHysteresis = config.Bind(
+                "Doctrine",
+                "AmbushAnchorHysteresis",
+                10f,
+                "Ambush sticky player: switch orbit anchor only when a new nearest player is this many meters closer "
+                + "(or sticky dead/out of range). Prevents orbit flap between nearby players.");
+
             EnableAmbushAmbienceTemp = config.Bind(
                 "AmbushAmbienceTemp",
                 "EnableAmbushAmbienceTemp",
@@ -553,9 +569,9 @@ namespace FactionTactics.Config
         private static void RegisterAllKnobs()
         {
             Register(
-                EnablePlugin, TickIntervalSeconds, MinSquadSize, DiscoveryRadius, SquadClusterRadius,
+                EnablePlugin, TickIntervalSeconds, MinSquadSize, DiscoveryRadius, SquadClusterRadius, SquadMergeRadius,
                 EnableRoman, RomanChargeRange, RomanPreferRanged,
-                EnableAmbush, AmbushOuterPocket, AmbushInnerBand, AmbushReEncircleGap,
+                EnableAmbush, AmbushOuterPocket, AmbushInnerBand, AmbushReEncircleGap, AmbushAnchorHysteresis,
                 EnableDeathRush, EnableDeathRushScream, DeathRushScreamCooldownSeconds, DeathRushMinSquadSize,
                 EnableVikingShieldWall, EnableSteppe, EnableInsectSiege, EnableCharredLegion,
                 EnablePackHunters, EnableArtilleryJelly, EnableTrollSynergy, TrollSynergyRange,

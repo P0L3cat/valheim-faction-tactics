@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using UnityEngine;
 using FactionTactics.Doctrine;
 
 namespace FactionTactics.Squad
@@ -61,6 +62,16 @@ namespace FactionTactics.Squad
 
         public float ActiveStandoffDistance { get; set; }
         public float ActiveSwingRange { get; set; }
+
+        // --- 1.0.8 Ambush sticky player orbit anchor ---
+        /// <summary>Sticky player instance id for Ambush Orb/Skirmish centering.</summary>
+        public long StickyPlayerId { get; set; }
+
+        /// <summary>Last known sticky player world position.</summary>
+        public UnityEngine.Vector3 StickyPlayerPosition { get; set; }
+
+        /// <summary>True once a sticky Ambush player anchor has been acquired.</summary>
+        public bool HasStickyPlayer { get; set; }
     }
 
     /// <summary>Builds stable squad keys and matches clusters across ticks by member-id overlap.</summary>

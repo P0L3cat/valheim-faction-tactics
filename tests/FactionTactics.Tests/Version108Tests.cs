@@ -1,0 +1,204 @@
+using System.Collections.Generic;
+using FactionTactics.Commander;
+using FactionTactics.Config;
+using FactionTactics.Doctrine;
+using FactionTactics.Orders;
+using FactionTactics.Siege;
+using FactionTactics.Squad;
+using UnityEngine;
+using Xunit;
+
+namespace FactionTactics.Tests
+{
+    public class Version108Tests
+    {
+        public Version108Tests() => TestConfig.EnsureBound();
+
+        [Fact]
+        public void PreferRun_true_when_not_holding()
+        {
+            var registry = DoctrinePackRegistry.CreateDefault();
+            var roman = registry.GetById("roman")!;
+            var squad = FakeSnapshots.MakeSquad(roman, 4, "Skeleton");
+            var runtime = new SquadRuntimeState { RomanPhase = RomanPhase.ApproachStandoff };
+            OrderApplicator.Intents.Clear();
+            new OrderApplicator().Apply(squad, new SquadOrder
+            {
+                OrderKind = DoctrineOrderKind.Advance,
+                Formation = FormationType.ShieldWall,
+                Stance = StanceType.Aggressive,
+            }, runtime);
+
+            Assert.NotEmpty(OrderApplicator.Intents);
+            foreach (var intent in OrderApplicator.Intents.Values)
+            {
+                Assert.False(intent.HoldGround);
+                Assert.True(intent.PreferRun);
+            }
+        }
+
+        [Fact]
+        public void PreferRun_mirrors_not_HoldGround()
+        {
+            var registry = DoctrinePackRegistry.CreateDefault();
+            var roman = registry.GetById("roman")!;
+            var squad = FakeSnapshots.MakeSquad(roman, 4, "Skeleton");
+            var runtime = new SquadRuntimeState
+            {
+                RomanPhase = RomanPhase.ContactHold,
+                LastThreatDistance = 2f,
+            };
+            OrderApplicator.Intents.Clear();
+            new OrderApplicator().Apply(squad, new SquadOrder
+            {
+                OrderKind = DoctrineOrderKind.Hold,
+                Formation = FormationType.ShieldWall,
+                Stance = StanceType.Defensive,
+            }, runtime);
+
+            Assert.NotEmpty(OrderApplicator.Intents);
+            foreach (var intent in OrderApplicator.Intents.Values)
+                Assert.Equal(!intent.HoldGround, intent.PreferRun);
+        }
+
+        [Fact]
+        public void Stragglers_within_merge_radius_join_parent_and_get_intents()
+        {
+            PluginConfig.MinSquadSize.Value = 3;
+            PluginConfig.SquadMergeRadius.Value = 40f;
+
+            var registry = DoctrinePackRegistry.CreateDefault();
+            var roman = registry.GetById("roman")!;
+            var large = FakeSnapshots.MakeSquad(roman, 4, "Skeleton");
+            large.SquadId = "roman-large";
+            var small = FakeSnapshots.MakeSquad(roman, 2, "Skeleton");
+            small.SquadId = "roman-straggler";
+            for (int i = 0; i < small.Members.Count; i++)
+                small.Members[i].Position = new Vector3(20f + i, 0f, 0f);
+
+            var director = new SquadDirector(
+                new FakeDiscovery(small, large),
+                new ScriptedCommander(registry, new SiegeDirector()),
+                registry,
+                new NullRoleScorer(),
+                new NullActionScorer(),
+                new OrderApplicator(),
+                new SiegeDirector());
+
+            OrderApplicator.Intents.Clear();
+            director.Tick(0.75f);
+
+            // Direct merge helper: stragglers fold into parent roster.
+            var merged = SquadDirector.MergeStragglers(new[] { small, large });
+            Assert.Single(merged);
+            Assert.True(merged[0].Members.Count >= 6);
+
+            Assert.Single(director.ActiveSquads);
+            Assert.NotNull(director.ActiveSquads[0].CurrentOrder);
+            foreach (var m in small.Members)
+                Assert.True(OrderApplicator.Intents.ContainsKey(m.InstanceId),
+                    $"missing intent for merged straggler {m.InstanceId}");
+        }
+
+        [Fact]
+        public void Isolated_stragglers_beyond_merge_radius_get_no_intents()
+        {
+            PluginConfig.MinSquadSize.Value = 3;
+            PluginConfig.SquadMergeRadius.Value = 40f;
+
+            var registry = DoctrinePackRegistry.CreateDefault();
+            var roman = registry.GetById("roman")!;
+            var large = FakeSnapshots.MakeSquad(roman, 4, "Skeleton");
+            large.SquadId = "roman-large";
+            var small = FakeSnapshots.MakeSquad(roman, 2, "Skeleton");
+            small.SquadId = "roman-isolated";
+            for (int i = 0; i < small.Members.Count; i++)
+                small.Members[i].Position = new Vector3(80f + i, 0f, 0f);
+
+            var director = new SquadDirector(
+                new FakeDiscovery(small, large),
+                new ScriptedCommander(registry, new SiegeDirector()),
+                registry,
+                new NullRoleScorer(),
+                new NullActionScorer(),
+                new OrderApplicator(),
+                new SiegeDirector());
+
+            OrderApplicator.Intents.Clear();
+            director.Tick(0.75f);
+
+            Assert.Single(director.ActiveSquads);
+            Assert.Equal(large.SquadId, director.ActiveSquads[0].SquadId);
+            Assert.Null(small.CurrentOrder);
+            foreach (var m in small.Members)
+                Assert.False(OrderApplicator.Intents.ContainsKey(m.InstanceId));
+        }
+
+        [Fact]
+        public void Ambush_sticky_player_hysteresis_prevents_flap()
+        {
+            PluginConfig.AmbushAnchorHysteresis.Value = 10f;
+            var state = new SquadRuntimeState();
+            var centroid = Vector3.zero;
+
+            OrderApplicator.UpdateAmbushStickyAnchor(state, centroid, new List<(long, Vector3)>
+            {
+                (101, new Vector3(10f, 0f, 0f)),
+                (202, new Vector3(12f, 0f, 0f)),
+            });
+            Assert.True(state.HasStickyPlayer);
+            Assert.Equal(101, state.StickyPlayerId);
+
+            // Only 3m closer — below 10m hysteresis — keep sticky.
+            OrderApplicator.UpdateAmbushStickyAnchor(state, centroid, new List<(long, Vector3)>
+            {
+                (101, new Vector3(10f, 0f, 0f)),
+                (303, new Vector3(7f, 0f, 0f)),
+            });
+            Assert.Equal(101, state.StickyPlayerId);
+
+            // 15m closer — switch.
+            OrderApplicator.UpdateAmbushStickyAnchor(state, centroid, new List<(long, Vector3)>
+            {
+                (101, new Vector3(20f, 0f, 0f)),
+                (404, new Vector3(5f, 0f, 0f)),
+            });
+            Assert.Equal(404, state.StickyPlayerId);
+        }
+
+        
+        [Fact]
+        public void Ambush_flank_orb_slots_center_on_sticky_player()
+        {
+            var registry = DoctrinePackRegistry.CreateDefault();
+            var ambush = registry.GetById("ambush")!;
+            var squad = FakeSnapshots.MakeSquad(ambush, 4, "Greydwarf");
+            for (int i = 0; i < squad.Members.Count; i++)
+                squad.Members[i].Position = new Vector3(100f + i, 0f, 0f);
+
+            var runtime = new SquadRuntimeState
+            {
+                HasStickyPlayer = true,
+                StickyPlayerId = 42,
+                StickyPlayerPosition = Vector3.zero,
+            };
+            OrderApplicator.Intents.Clear();
+            new OrderApplicator().Apply(squad, new SquadOrder
+            {
+                OrderKind = DoctrineOrderKind.Flank,
+                Formation = FormationType.Orb,
+                Stance = StanceType.Aggressive,
+            }, runtime);
+
+            foreach (var m in squad.Members)
+            {
+                Assert.True(OrderApplicator.Intents.TryGetValue(m.InstanceId, out var intent),
+                    $"missing intent for {m.InstanceId}");
+                var d = Vector3.Distance(intent!.DesiredPosition, runtime.StickyPlayerPosition);
+                Assert.True(d < 20f, $"slot far from sticky player: {d}");
+                Assert.True(intent.PreferRun);
+            }
+        }
+
+    }
+}

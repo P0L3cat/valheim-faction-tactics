@@ -6,7 +6,7 @@ namespace FactionTactics.Orders
     /// </summary>
     public static class FtVersion
     {
-        public const string ProductVersion = "1.0.7";
+        public const string ProductVersion = "1.0.8";
         public const int IntentSchemaVersion = IntentZdoCodec.SchemaVersion;
     }
 }
