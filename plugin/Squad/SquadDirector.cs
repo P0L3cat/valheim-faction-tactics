@@ -184,10 +184,17 @@ namespace FactionTactics.Squad
                     var (ratio, broken) = ComputeCasualties(alive, state, minSize);
                     squad.LastCasualtyRatio = ratio;
                     squad.LastIsBroken = broken;
-                    // 0.2.1: always LogInfo so GPortal smoke shows why _active stayed empty.
+                    // 1.0.9 Pack-as-Unit: once a pack has ever met minSize, keep commanding remnants
+                    // mid-fight (FormUp magnet / PreferRun) instead of dumping them to vanilla.
+                    // Truly never-formed tiny packs still skip Apply.
+                    if (!state.EverMetMinSize || alive <= 0)
+                    {
+                        Plugin.Log?.LogInfo(
+                            $"Squad {squad.SquadId} below minSize alive={alive} roster={roster} min={minSize} doctrine={doctrineId}");
+                        continue;
+                    }
                     Plugin.Log?.LogInfo(
-                        $"Squad {squad.SquadId} below minSize alive={alive} roster={roster} min={minSize} doctrine={doctrineId}");
-                    continue;
+                        $"Squad {squad.SquadId} remnant keep-alive alive={alive} peak={state.PeakAlive} min={minSize} doctrine={doctrineId}");
                 }
 
                 RefineRolesWithScorer(squad);

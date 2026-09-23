@@ -41,13 +41,13 @@ Do **not** rename to 1.1.0 without Nate.
 
 ## Version ladder
 
-### 1.0.8 — Foundation (SHIPPED / cooking)
+### 1.0.8 — Foundation (SHIPPED)
 
 PreferRun default, straggler merge (`SquadMergeRadius` 40), Ambush sticky player orbit + hysteresis (`AmbushAnchorHysteresis` 10).
 
 **Playtest:** Romans run into FormUp; scattered skeletons join the wall; Greydwarfs orbit **you**.
 
-### 1.0.9 — Pack-as-Unit (HUGE stride) ← next
+### 1.0.9 — Pack-as-Unit (HUGE stride) ← cooking/shipped
 
 North star: every squad moves as **ONE BODY**.
 

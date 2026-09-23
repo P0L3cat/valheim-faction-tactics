@@ -25,7 +25,7 @@ namespace FactionTactics
     {
         public const string PluginGuid = "com.nate.factiontactics";
         public const string PluginName = "FactionTactics";
-        public const string PluginVersion = "1.0.8";
+        public const string PluginVersion = "1.0.9";
 
         internal static Plugin Instance { get; private set; } = null!;
         internal static ManualLogSource Log { get; private set; } = null!;
@@ -81,7 +81,7 @@ namespace FactionTactics
             {
                 _harmony = new Harmony(PluginGuid);
                 MonsterAIPatches.Apply(_harmony);
-                Log.LogInfo($"{PluginName} {PluginVersion} loaded (1.0.8 PreferRun default, straggler merge, Ambush sticky player orbit). Tick={PluginConfig.TickIntervalSeconds.Value}s");
+                Log.LogInfo($"{PluginName} {PluginVersion} loaded (1.0.9 Pack-as-Unit: shared facing, FormUp magnet, remnant keep-alive). Tick={PluginConfig.TickIntervalSeconds.Value}s");
             }
             else
             {

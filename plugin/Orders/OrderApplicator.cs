@@ -12,6 +12,7 @@ namespace FactionTactics.Orders
     ///   • Missiles → FocusWallman cover (ProtectMissiles / FocusFire on players threatening breachers)
     /// Quiet assault (AllowVanillaStructure): light-touch — PreferAllowVanillaStructure, don't override chase away from pieces.
     /// ShieldWall/Line slots are oriented centroid→threat (right = lateral, forward = depth).
+    /// 1.0.9 Pack-as-Unit: shared facing + FormUp magnet so the squad moves as one body.
     /// </summary>
     public sealed class OrderApplicator
     {
@@ -268,6 +269,27 @@ namespace FactionTactics.Orders
                 // Hot assault missiles cover players; they do not plant.
                 if (assaultMissileCover)
                     holdGround = false;
+
+
+                // 1.0.9 Pack-as-Unit FormUp magnet: far-from-slot members run hard into slot.
+                // Absolute on Advance / approaching Hold — overrides chase/threat distractors.
+                var magnetDist = PluginConfig.FormUpMagnetDistance?.Value ?? 3.5f;
+                if (magnetDist > 0f && distToSlot > magnetDist)
+                {
+                    var formUpOrder = order.OrderKind == DoctrineOrderKind.Advance
+                        || order.OrderKind == DoctrineOrderKind.Hold
+                        || order.OrderKind == DoctrineOrderKind.ProtectMissiles
+                        || order.OrderKind == DoctrineOrderKind.FocusFire
+                        || order.OrderKind == DoctrineOrderKind.Flank
+                        || order.OrderKind == DoctrineOrderKind.Kite
+                        || order.OrderKind == DoctrineOrderKind.RetreatAndReform;
+                    if (formUpOrder)
+                    {
+                        desired = slot;
+                        holdGround = false; // never plant while snapping into formation
+                    }
+                }
+
 
                 var intent = new MemberIntent
                 {

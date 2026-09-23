@@ -19,6 +19,7 @@ namespace FactionTactics.Config
         public static ConfigEntry<float> DiscoveryRadius { get; private set; } = null!;
         public static ConfigEntry<float> SquadClusterRadius { get; private set; } = null!;
         public static ConfigEntry<float> SquadMergeRadius { get; private set; } = null!;
+        public static ConfigEntry<float> FormUpMagnetDistance { get; private set; } = null!;
         public static ConfigEntry<bool> EnableRoman { get; private set; } = null!;
         public static ConfigEntry<float> RomanChargeRange { get; private set; } = null!;
         public static ConfigEntry<bool> RomanPreferRanged { get; private set; } = null!;
@@ -148,6 +149,12 @@ namespace FactionTactics.Config
                 40f,
                 "Below-MinSquadSize same-doctrine clusters within this radius of an active (≥MinSquadSize) "
                 + "same-doctrine squad merge into that parent so stragglers FormUp instead of vanilla wandering.");
+
+            FormUpMagnetDistance = config.Bind(
+                "Squad",
+                "FormUpMagnetDistance",
+                3.5f,
+                "1.0.9 Pack-as-Unit: members farther than this from their formation slot PreferRun hard into the slot.");
 
             EnableRoman = config.Bind(
                 "Doctrine",
@@ -569,7 +576,7 @@ namespace FactionTactics.Config
         private static void RegisterAllKnobs()
         {
             Register(
-                EnablePlugin, TickIntervalSeconds, MinSquadSize, DiscoveryRadius, SquadClusterRadius, SquadMergeRadius,
+                EnablePlugin, TickIntervalSeconds, MinSquadSize, DiscoveryRadius, SquadClusterRadius, SquadMergeRadius, FormUpMagnetDistance,
                 EnableRoman, RomanChargeRange, RomanPreferRanged,
                 EnableAmbush, AmbushOuterPocket, AmbushInnerBand, AmbushReEncircleGap, AmbushAnchorHysteresis,
                 EnableDeathRush, EnableDeathRushScream, DeathRushScreamCooldownSeconds, DeathRushMinSquadSize,
