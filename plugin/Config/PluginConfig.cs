@@ -78,6 +78,17 @@ namespace FactionTactics.Config
         public static ConfigEntry<float> OrderScoreHysteresis { get; private set; } = null!;
         public static ConfigEntry<float> RomanWallOuter { get; private set; } = null!;
         public static ConfigEntry<float> RomanWallInner { get; private set; } = null!;
+        public static ConfigEntry<float> RomanStandoffDistance { get; private set; } = null!;
+        public static ConfigEntry<float> RomanStandoffHoldMin { get; private set; } = null!;
+        public static ConfigEntry<float> RomanStandoffHoldMax { get; private set; } = null!;
+        public static ConfigEntry<float> RomanContactSwingRange { get; private set; } = null!;
+        public static ConfigEntry<float> RomanRetreatPauseSeconds { get; private set; } = null!;
+        public static ConfigEntry<float> VikingStandoffDistance { get; private set; } = null!;
+        public static ConfigEntry<float> VikingIndoorsStandoff { get; private set; } = null!;
+        public static ConfigEntry<float> VikingStandoffHoldMin { get; private set; } = null!;
+        public static ConfigEntry<float> VikingStandoffHoldMax { get; private set; } = null!;
+        public static ConfigEntry<float> VikingContactSwingRange { get; private set; } = null!;
+        public static ConfigEntry<float> VikingRetreatPauseSeconds { get; private set; } = null!;
         public static ConfigEntry<float> FlankSplitMeters { get; private set; } = null!;
         public static ConfigEntry<float> IsolateBuddyMeters { get; private set; } = null!;
         public static ConfigEntry<bool> DiscoveryBurstOnSpawn { get; private set; } = null!;
@@ -423,7 +434,7 @@ namespace FactionTactics.Config
                 "Combat",
                 "OrderMinDwellSeconds",
                 1.25f,
-                "Phase B: minimum seconds on an order before a change. Bypassed on threat lost, broken, or Ambush Charge→Kite.");
+                "Phase B: minimum seconds on an order before a change. Bypassed on threat lost, broken, Ambush Charge→Kite, or a Roman/Viking cadence timer expiry.");
 
             OrderScoreHysteresis = config.Bind(
                 "Combat",
@@ -435,13 +446,79 @@ namespace FactionTactics.Config
                 "Combat",
                 "RomanWallOuter",
                 18f,
-                "Phase B: Roman advances until the threat is inside this outer wall band (meters).");
+                "Legacy soft band (meters). 1.0.7 cadence uses RomanStandoffDistance. Kept so older ft set keys still bind.");
 
             RomanWallInner = config.Bind(
                 "Combat",
                 "RomanWallInner",
                 14f,
-                "Phase B: Roman presses the missile line once the threat is inside this inner band (meters).");
+                "Legacy soft band (meters). Not the cadence hold line. Kept so older ft set keys still bind.");
+
+            RomanStandoffDistance = config.Bind(
+                "Combat",
+                "RomanStandoffDistance",
+                20f,
+                "Roman cadence: advance to this standoff (meters) from the player, then Hold for one rolled duration. Default 20.");
+
+            RomanStandoffHoldMin = config.Bind(
+                "Combat",
+                "RomanStandoffHoldMin",
+                1f,
+                "Roman cadence: minimum standoff Hold seconds (rolled once per entry, inclusive). Default 1.");
+
+            RomanStandoffHoldMax = config.Bind(
+                "Combat",
+                "RomanStandoffHoldMax",
+                15f,
+                "Roman cadence: maximum standoff Hold seconds (rolled once per entry, inclusive). Default 15.");
+
+            RomanContactSwingRange = config.Bind(
+                "Combat",
+                "RomanContactSwingRange",
+                3.5f,
+                "Roman cadence: press until the front line is within this swing band (meters), then Hold. Charge gate still uses RomanChargeRange.");
+
+            RomanRetreatPauseSeconds = config.Bind(
+                "Combat",
+                "RomanRetreatPauseSeconds",
+                1f,
+                "Roman cadence: Hold seconds after the player opens out of swing, then Advance again. Default 1.");
+
+            VikingStandoffDistance = config.Bind(
+                "Combat",
+                "VikingStandoffDistance",
+                14f,
+                "Viking cadence: open-field standoff (meters). Default 14 (choke band ~12–15).");
+
+            VikingIndoorsStandoff = config.Bind(
+                "Combat",
+                "VikingIndoorsStandoff",
+                12f,
+                "Viking cadence: indoors/crypt standoff (meters). Live standoff is min(open, this) when IndoorsOrCrypt.");
+
+            VikingStandoffHoldMin = config.Bind(
+                "Combat",
+                "VikingStandoffHoldMin",
+                1f,
+                "Viking cadence: minimum standoff Hold seconds. Default 1.");
+
+            VikingStandoffHoldMax = config.Bind(
+                "Combat",
+                "VikingStandoffHoldMax",
+                8f,
+                "Viking cadence: maximum standoff Hold seconds. Default 8.");
+
+            VikingContactSwingRange = config.Bind(
+                "Combat",
+                "VikingContactSwingRange",
+                3.5f,
+                "Viking cadence: press until the front line is within this swing band (meters). Default 3.5.");
+
+            VikingRetreatPauseSeconds = config.Bind(
+                "Combat",
+                "VikingRetreatPauseSeconds",
+                1f,
+                "Viking cadence: Hold seconds after the player opens out of swing, then press. Default 1.");
 
             FlankSplitMeters = config.Bind(
                 "Combat",
@@ -492,6 +569,10 @@ namespace FactionTactics.Config
                 HoldAttackCooldown, HoldAttackRangeFactor, SwingStaggerMs,
                 FormationReshuffleSeconds, FormationCasualtyReshuffle, ChargeMaxSeconds,
                 OrderMinDwellSeconds, OrderScoreHysteresis, RomanWallOuter, RomanWallInner,
+                RomanStandoffDistance, RomanStandoffHoldMin, RomanStandoffHoldMax,
+                RomanContactSwingRange, RomanRetreatPauseSeconds,
+                VikingStandoffDistance, VikingIndoorsStandoff, VikingStandoffHoldMin, VikingStandoffHoldMax,
+                VikingContactSwingRange, VikingRetreatPauseSeconds,
                 FlankSplitMeters, IsolateBuddyMeters, DiscoveryBurstOnSpawn, DiscoveryBurstSeconds);
         }
 

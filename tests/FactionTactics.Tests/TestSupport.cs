@@ -294,6 +294,16 @@ namespace FactionTactics.Tests
             Roles = new Dictionary<string, int>(s.Roles),
             PreviousOrderKind = s.PreviousOrderKind,
             AgeSeconds = s.AgeSeconds,
+            FrontlineThreatDistance = s.FrontlineThreatDistance,
+            RomanPhase = s.RomanPhase,
+            HoldPhaseDeadline = s.HoldPhaseDeadline,
+            StandoffHoldDuration = s.StandoffHoldDuration,
+            SquadAgeSeconds = s.SquadAgeSeconds,
+            PreviousThreatDistance = s.PreviousThreatDistance,
+            CadenceTimerElapsed = s.CadenceTimerElapsed,
+            ForcedHoldSeconds = s.ForcedHoldSeconds,
+            ActiveStandoffDistance = s.ActiveStandoffDistance,
+            ActiveSwingRange = s.ActiveSwingRange,
         };
 
         private static (float advance, float charge) Ranges(string doctrineId) => doctrineId switch

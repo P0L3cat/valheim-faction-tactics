@@ -42,6 +42,25 @@ namespace FactionTactics.Squad
         public float SlotLockCasualtyRatio { get; set; }
         public DoctrineOrderKind? SlotLockOrderKind { get; set; }
         public FactionTactics.Orders.FormationType? SlotLockFormation { get; set; }
+
+        // --- 1.0.7 banded cadence (Roman + Viking share the phase enum) ---
+        /// <summary>Persists across discovery rebuilds via member-overlap matching.</summary>
+        public RomanPhase RomanPhase { get; set; } = RomanPhase.Idle;
+
+        /// <summary>Absolute <see cref="AgeSeconds"/> when the current hold phase ends.</summary>
+        public float HoldPhaseDeadline { get; set; }
+
+        /// <summary>Rolled once on entry to <see cref="RomanPhase.StandoffHold"/>.</summary>
+        public float StandoffHoldDuration { get; set; }
+
+        /// <summary>Previous tick's front-line distance, for retreat-open detection.</summary>
+        public float PreviousThreatDistance { get; set; } = float.MaxValue;
+
+        /// <summary>This tick's nearest threat (any member). Applicator contact band.</summary>
+        public float LastThreatDistance { get; set; } = float.MaxValue;
+
+        public float ActiveStandoffDistance { get; set; }
+        public float ActiveSwingRange { get; set; }
     }
 
     /// <summary>Builds stable squad keys and matches clusters across ticks by member-id overlap.</summary>

@@ -163,9 +163,12 @@ namespace FactionTactics.Tests
             // Use director path indirectly via ApplyChargeMaxHygiene is private —
             // verify Viking post-Charge peel still works (existing contract).
             var cmd = FakeSnapshots.CreateCommander();
+            // Healthy Viking no longer reforms forever after Charge; 8m re-enters the standoff Hold.
             var after = FakeSnapshots.WithThreat(FakeSnapshots.Viking(), 8f);
             after.PreviousOrderKind = nameof(DoctrineOrderKind.Charge);
-            Assert.Equal(DoctrineOrderKind.RetreatAndReform, cmd.Propose(after)!.OrderKind);
+            var vikingOrder = cmd.Propose(after);
+            Assert.Equal(DoctrineOrderKind.Hold, vikingOrder!.OrderKind);
+            Assert.NotEqual(DoctrineOrderKind.RetreatAndReform, vikingOrder.OrderKind);
 
             var dr = FakeSnapshots.WithThreat(FakeSnapshots.Base("death-rush", 3), 5f);
             dr.PreviousOrderKind = nameof(DoctrineOrderKind.Charge);

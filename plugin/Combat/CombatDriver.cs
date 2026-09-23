@@ -19,6 +19,8 @@ namespace FactionTactics.Combat
         private const float MoveArriveDist = 1.5f;
         private const float AdvanceStopDist = 2f;
         private const float DefaultMeleeRange = 2.5f;
+        /// <summary>Matches OrderApplicator.FrontHoldSlotDist. Local so the client build can drop a stale pin.</summary>
+        private const float HoldGroundPinDist = 2.5f;
 
         public static long DriveCount { get; private set; }
         public static long AttackAttempts { get; private set; }
@@ -46,11 +48,18 @@ namespace FactionTactics.Combat
 
             if (intent.HoldGround)
             {
-                ai.StopMoving();
-                FaceThreatOrSlot(ai, intent);
-                SoftSuppressHunt(ai);
-                TryDriveAttack(ai, intent);
-                return;
+                // Slot pin with the destination still far away is the eternal-wall failure.
+                // Drop the flag and walk; the next intent refresh puts it back only when legal.
+                if (HoldGroundDestinationFar(ai, intent))
+                    intent.HoldGround = false;
+                else
+                {
+                    ai.StopMoving();
+                    FaceThreatOrSlot(ai, intent);
+                    SoftSuppressHunt(ai);
+                    TryDriveAttack(ai, intent);
+                    return;
+                }
             }
 
             var dest = intent.DesiredPosition;
@@ -351,6 +360,17 @@ namespace FactionTactics.Combat
             {
                 return true; // fail open for Charge/chase; Hold gated path already counted blocks on null
             }
+        }
+
+        private static bool HoldGroundDestinationFar(MonsterAI ai, MemberIntent intent)
+        {
+            var dest = intent.DesiredPosition;
+            if (dest == Vector3.zero || ai == null)
+                return false;
+            var pos = ai.transform.position;
+            var dx = pos.x - dest.x;
+            var dz = pos.z - dest.z;
+            return dx * dx + dz * dz > HoldGroundPinDist * HoldGroundPinDist;
         }
 
         private static long InstanceId(MonsterAI ai)

@@ -77,6 +77,36 @@ namespace FactionTactics.Squad
         public float AdvanceRange { get; set; } = 28f;
         public float ChargeRange { get; set; } = 10f;
 
+        /// <summary>
+        /// Distance from the front line (Front/Leader) to the threat.
+        /// MaxValue when unknown — cadence then uses <see cref="NearestThreatDistance"/>.
+        /// </summary>
+        public float FrontlineThreatDistance { get; set; } = float.MaxValue;
+
+        /// <summary>Banded cadence phase. Idle until a Roman/Viking select steps it.</summary>
+        public Doctrine.RomanPhase RomanPhase { get; set; } = Doctrine.RomanPhase.Idle;
+
+        /// <summary>Absolute squad-age timestamp when the current hold ends.</summary>
+        public float HoldPhaseDeadline { get; set; }
+
+        /// <summary>Seconds rolled for the standoff hold (1..15 Roman, 1..8 Viking).</summary>
+        public float StandoffHoldDuration { get; set; }
+
+        /// <summary>SquadRuntimeState.AgeSeconds. Distinct from order <see cref="AgeSeconds"/>.</summary>
+        public float SquadAgeSeconds { get; set; }
+
+        /// <summary>Prior front-line distance. MaxValue means "no sample yet".</summary>
+        public float PreviousThreatDistance { get; set; } = float.MaxValue;
+
+        /// <summary>Set when a hold timer expires so min-dwell cannot trap the press.</summary>
+        public bool CadenceTimerElapsed { get; set; }
+
+        /// <summary>Test hook: force the next standoff roll. Null in live play.</summary>
+        public float? ForcedHoldSeconds { get; set; }
+
+        public float ActiveStandoffDistance { get; set; }
+        public float ActiveSwingRange { get; set; }
+
         public Dictionary<string, int> Roles { get; set; } = new Dictionary<string, int>();
 
         public string? PreviousOrderKind { get; set; }
@@ -143,6 +173,7 @@ namespace FactionTactics.Squad
                 AssaultActive = threats.AssaultActive,
                 AdvanceRange = advance,
                 ChargeRange = charge,
+                FrontlineThreatDistance = threats.FrontlineThreatDistance,
                 Roles = roles,
                 PreviousOrderKind = squad.PreviousOrderKind?.ToString(),
                 AgeSeconds = squad.OrderAgeSeconds,
@@ -198,5 +229,8 @@ namespace FactionTactics.Squad
         public bool PlayersNearAssault { get; set; }
         /// <summary>Set by SquadDirector after SiegeDirector eligibility check.</summary>
         public bool AssaultActive { get; set; }
+
+        /// <summary>Front/Leader distance to the threat. MaxValue when not measured.</summary>
+        public float FrontlineThreatDistance { get; set; } = float.MaxValue;
     }
 }

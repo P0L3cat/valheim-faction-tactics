@@ -169,6 +169,10 @@ namespace FactionTactics.Doctrine
             if (snapshot.CasualtyRatio >= 0.45f
                 && (next == DoctrineOrderKind.RetreatAndReform || next == DoctrineOrderKind.Kite))
                 return true;
+            // Standoff / retreat-pause timer elapsed: do not trap the press on Hold.
+            if (snapshot.CadenceTimerElapsed
+                && (Eq(doctrineId, "roman") || Eq(doctrineId, "viking-shieldwall")))
+                return true;
             return IsExplicitForce(doctrineId, previous, next);
         }
 

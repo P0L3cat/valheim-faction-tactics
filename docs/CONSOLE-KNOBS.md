@@ -1,4 +1,4 @@
-# Faction Tactics console knobs (1.0.6)
+# Faction Tactics console knobs (1.0.7)
 
 Admin / dedicated / listen-host **Terminal** commands to tweak live `PluginConfig` without redeploying DLLs.
 
@@ -104,16 +104,38 @@ Listen-host (server DLL present) still uses the local `ft` command (no RPC). Pur
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `OrderMinDwellSeconds` | 1.25 | Min time on an order before a change. Skipped on threat lost, broken, or Ambush Charge→Kite |
-| `OrderScoreHysteresis` | 0.15 | Roman/Ambush need this much score lead to leave the current order |
-| `RomanWallOuter` | 18 | Roman advances until the threat is inside this band (meters) |
-| `RomanWallInner` | 14 | Roman missile line / press once inside this band (meters) |
+| `OrderMinDwellSeconds` | 1.25 | Min time on an order before a change. Skipped on threat lost, broken, Ambush Charge→Kite, or a Roman/Viking cadence timer expiry |
+| `OrderScoreHysteresis` | 0.15 | Ambush (and any scored pick) needs this much score lead to leave the current order. Roman cadence does not use it to freeze a press |
+| `RomanWallOuter` | 18 | Legacy. Not the hold line. Cadence uses `RomanStandoffDistance` |
+| `RomanWallInner` | 14 | Legacy. Not the hold line |
 | `ChargeMaxSeconds` | 4.0 | Already in Phase A. Roman with live missiles re-evals to ProtectMissiles; Ambush to Kite |
+
+### 1.0.7 banded cadence
+
+HoldGround is rare. Romans and Vikings only plant during standoff hold, contact hold, or the 1s retreat pause, and only within `FrontHoldSlotDist` of the slot. Advance never pins because a member is already on the slot.
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `RomanStandoffDistance` | 20 | Advance to this line (meters), then Hold |
+| `RomanStandoffHoldMin` | 1 | Shortest rolled standoff Hold (seconds, inclusive) |
+| `RomanStandoffHoldMax` | 15 | Longest rolled standoff Hold (seconds, inclusive). Rolled once per entry |
+| `RomanContactSwingRange` | 3.5 | Press until the front line is inside this band, then Hold |
+| `RomanRetreatPauseSeconds` | 1 | Hold after the player opens out of swing, then Advance again |
+| `VikingStandoffDistance` | 14 | Open-field standoff (choke ~12–15m) |
+| `VikingIndoorsStandoff` | 12 | Crypt/indoors standoff. Live value is min(open, this) when indoors |
+| `VikingStandoffHoldMin` | 1 | Shortest Viking standoff Hold |
+| `VikingStandoffHoldMax` | 8 | Longest Viking standoff Hold |
+| `VikingContactSwingRange` | 3.5 | Viking press-to-swing band |
+| `VikingRetreatPauseSeconds` | 1 | Viking retreat pause |
 
 ```
 ft set OrderMinDwellSeconds 1.25
 ft set OrderScoreHysteresis 0.15
-ft set RomanWallOuter 18
-ft set RomanWallInner 14
+ft set RomanStandoffDistance 20
+ft set RomanStandoffHoldMax 15
+ft set RomanContactSwingRange 3.5
+ft set RomanRetreatPauseSeconds 1
+ft set VikingStandoffDistance 14
+ft set VikingIndoorsStandoff 12
 ft get ChargeMaxSeconds
 ```

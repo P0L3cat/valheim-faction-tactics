@@ -7,11 +7,18 @@ using FactionTactics.Squad;
 namespace FactionTactics.Doctrine
 {
     /// <summary>
-    /// Draugr* → Viking shield wall: line of shields, archers behind, charge, reform.
-    /// Indoors/crypt bias: prefer choke Holds over open Advance when IndoorsOrCrypt is set.
+    /// Draugr* → Viking shield wall. Same cadence as Roman, tighter:
+    /// standoff ~12–15m (indoors clamps toward 12), hold roll 1..8s, press to swing,
+    /// retreat opens a 1s hold then press. Missiles keep range. No eternal choke Hold.
     /// </summary>
     public sealed class VikingShieldWallDoctrine : DoctrinePackBase
     {
+        public const float StandoffDistance = 14f;
+        public const float IndoorsStandoff = 12f;
+        public const float DefaultSwingRange = 3.5f;
+        public const float StandoffHoldMin = 1f;
+        public const float StandoffHoldMax = 8f;
+        public const float RetreatPauseSeconds = 1f;
         public override string Id => "viking-shieldwall";
         public override string DisplayName => "VikingShieldWall";
 
@@ -53,61 +60,31 @@ namespace FactionTactics.Doctrine
 
         public override DoctrineOrderKind SelectOrder(SquadSnapshot snapshot, DoctrineOrderKind? previous)
         {
-            // Viking shield-wall FSM:
-            // Hold (wall) → Advance → ProtectMissiles/FocusFire → Charge → RetreatAndReform
-            // IndoorsOrCrypt: choke bias — Hold/ProtectMissiles longer; Charge only when very close.
             if (snapshot.ThreatCount <= 0)
+            {
+                BandedCadence.Reset(snapshot);
                 return DoctrineOrderKind.Hold;
+            }
 
             if (snapshot.IsBroken || snapshot.CasualtyRatio >= 0.40f)
                 return DoctrineOrderKind.RetreatAndReform;
 
-            // After a charge, briefly reform the wall.
-            if (previous == DoctrineOrderKind.Charge)
-                return DoctrineOrderKind.RetreatAndReform;
+            _ = previous;
+            BandedCadence.Step(snapshot, LiveProfile(snapshot.IndoorsOrCrypt));
+            return BandedCadence.OrderFor(snapshot.RomanPhase);
+        }
 
-            if (previous == DoctrineOrderKind.RetreatAndReform)
-            {
-                if (snapshot.NearestThreatDistance > snapshot.AdvanceRange)
-                    return DoctrineOrderKind.Hold;
-                return DoctrineOrderKind.Advance;
-            }
-
-            var hasMissiles = snapshot.CountByRole(SquadRole.Missile) > 0;
-            var choke = snapshot.IndoorsOrCrypt;
-            var chargeBand = choke
-                ? Math.Min(snapshot.ChargeRange, 7f)
-                : snapshot.ChargeRange;
-            var advanceBand = choke
-                ? Math.Min(snapshot.AdvanceRange, 18f)
-                : snapshot.AdvanceRange;
-
-            // Crypt/choke: prefer holding the wall at the bottleneck.
-            if (choke && snapshot.NearestThreatDistance > chargeBand)
-            {
-                if (hasMissiles)
-                {
-                    if (snapshot.MissileThreatened || previous == DoctrineOrderKind.FocusFire)
-                        return DoctrineOrderKind.ProtectMissiles;
-                    return DoctrineOrderKind.FocusFire;
-                }
-                return DoctrineOrderKind.Hold;
-            }
-
-            if (snapshot.NearestThreatDistance > advanceBand)
-                return DoctrineOrderKind.Advance;
-
-            if (hasMissiles && snapshot.NearestThreatDistance > chargeBand)
-            {
-                if (previous != DoctrineOrderKind.FocusFire && snapshot.MissileThreatened)
-                    return DoctrineOrderKind.ProtectMissiles;
-                return DoctrineOrderKind.FocusFire;
-            }
-
-            if (snapshot.NearestThreatDistance <= chargeBand)
-                return DoctrineOrderKind.Charge;
-
-            return DoctrineOrderKind.Advance;
+        /// <summary>Open field uses <see cref="StandoffDistance"/>; crypts clamp toward <see cref="IndoorsStandoff"/>.</summary>
+        public static CadenceProfile LiveProfile(bool indoors)
+        {
+            var open = PluginConfig.VikingStandoffDistance?.Value ?? StandoffDistance;
+            var choke = PluginConfig.VikingIndoorsStandoff?.Value ?? IndoorsStandoff;
+            var standoff = indoors ? Math.Min(open, choke) : open;
+            var swing = PluginConfig.VikingContactSwingRange?.Value ?? DefaultSwingRange;
+            var min = PluginConfig.VikingStandoffHoldMin?.Value ?? StandoffHoldMin;
+            var max = PluginConfig.VikingStandoffHoldMax?.Value ?? StandoffHoldMax;
+            var pause = PluginConfig.VikingRetreatPauseSeconds?.Value ?? RetreatPauseSeconds;
+            return CadenceProfile.Resolve(standoff, swing, min, max, pause);
         }
 
         public static bool IsArcher(SquadMemberView member)

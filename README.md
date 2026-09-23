@@ -1,10 +1,10 @@
 # Faction Tactics
 
-**1.0.6 hybrid (Phase B):** server commander (`FactionTactics.dll`) + client executor (`FactionTactics.Client.dll`). Phase A (swing gate, slot lock, Charge cap) stays. Phase B adds order min-dwell and scored Roman/Ambush transitions so Charge/Hold chatters less, greys kite after a flash, and skeletons keep the missile line.
+**1.0.7 hybrid:** server commander (`FactionTactics.dll`) + client executor (`FactionTactics.Client.dll`). HoldGround is rare. Romans advance to a ~20m standoff, hold 1–15s, press until the front line is in swing range, then hold; if the player opens the gap they pause 1s and press again. Vikings use the same cadence on a tighter ~12–15m line. Advance never pins HoldGround just for standing on a slot. Ambush and Death-Rush do not plant. Phase A swing gate and Phase B dwell stay.
 
-## Quick install (1.0.6)
+## Quick install (1.0.7)
 
-Admin console: `ft help` / `ft set <key> <value>` on dedicated, listen-host, **or client F5 as admin** (RPC to dedicated — see `docs/CONSOLE-KNOBS.md`). Phase B knobs: `OrderMinDwellSeconds`, `OrderScoreHysteresis`, `RomanWallOuter`, `RomanWallInner`, `ChargeMaxSeconds`.
+Admin console: `ft help` / `ft set <key> <value>` on dedicated, listen-host, **or client F5 as admin** (RPC to dedicated — see `docs/CONSOLE-KNOBS.md`). Cadence knobs: `RomanStandoffDistance`, `RomanStandoffHoldMin`, `RomanStandoffHoldMax`, `RomanContactSwingRange`, `RomanRetreatPauseSeconds`, and the matching `Viking*` keys.
 
 
 1. **Server:** unzip `dist/FactionTactics-Server.zip` → `BepInEx/plugins/FactionTactics.dll`
@@ -32,10 +32,10 @@ This mod **only tunes AI behavior**. It does **not** spawn mobs, trigger extra r
 
 | Pack | Prefabs | Enable flag | Key FSM |
 |------|---------|-------------|---------|
-| Roman | `Skeleton*` | `EnableRoman` | Hold → Advance → FocusFire/ProtectMissiles → Charge/Flank → Reform |
+| Roman | `Skeleton*` | `EnableRoman` | Advance to ~20m standoff → Hold 1–15s → press to swing → contact Hold; retreat pauses 1s then presses. Missiles keep range. Charge only last-resort |
 | Death-Rush | `Greyling` | `EnableDeathRush` | Threat → Charge bee-line (fight to death; no kite/retreat) |
 | Ambush | `Greydwarf*` | `EnableAmbush` | Hold → Flank → Charge (flash) → Reform → Kite (+ Troll synergy) |
-| VikingShieldWall | `Draugr*` | `EnableVikingShieldWall` | Shield wall Hold → Advance → archers FocusFire → Charge → Reform (choke bias indoors) |
+| VikingShieldWall | `Draugr*` | `EnableVikingShieldWall` | Roman cadence, tighter standoff (~14m, ~12m indoors), hold 1–8s, press to swing; retreat pauses 1s then presses |
 | Steppe | `Fuling*` / `Goblin*` | `EnableSteppe` | Kite → volley FocusFire → Flank encircle; berserk Charge only on cut-off; village orbit |
 | InsectSiege | `Seeker*` / `Tick*` / `Gjall*` | `EnableInsectSiege` | Soldiers Advance, Seekers Flank, Gjall FocusFire; soften near Dvergr |
 | CharredLegion | `Charred*` / `Asksvin*` | `EnableCharredLegion` | Dense ranks + rear casters; Asksvin cavalry Flank (not in rank) |

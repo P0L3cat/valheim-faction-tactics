@@ -8,7 +8,7 @@ using FactionTactics.Orders;
 namespace FactionTactics.Client
 {
     /// <summary>
-    /// 1.0.6: full <c>ft help|get|set|reload|status</c> on pure clients.
+    /// 1.0.7: full <c>ft help|get|set|reload|status</c> on pure clients.
     /// Mutating commands RPC to dedicated (FtConfigRpc); admin-only.
     /// Skips registration when server FactionTactics.dll is also loaded (listen-host).
     /// </summary>
@@ -69,6 +69,10 @@ namespace FactionTactics.Client
                 "HoldAttackCooldown", "SwingStaggerMs", "HoldAttackRangeFactor",
                 "FormationReshuffleSeconds", "FormationCasualtyReshuffle", "ChargeMaxSeconds",
                 "OrderMinDwellSeconds", "OrderScoreHysteresis", "RomanWallOuter", "RomanWallInner",
+                "RomanStandoffDistance", "RomanStandoffHoldMin", "RomanStandoffHoldMax",
+                "RomanContactSwingRange", "RomanRetreatPauseSeconds",
+                "VikingStandoffDistance", "VikingIndoorsStandoff", "VikingStandoffHoldMin", "VikingStandoffHoldMax",
+                "VikingContactSwingRange", "VikingRetreatPauseSeconds",
                 "FlankSplitMeters", "IsolateBuddyMeters",
                 "DiscoveryBurstOnSpawn", "DiscoveryBurstSeconds",
                 "TickIntervalSeconds", "MinSquadSize", "DiscoveryRadius",
@@ -133,7 +137,8 @@ namespace FactionTactics.Client
             args.Context.AddString("  Mutating commands apply on the dedicated server PluginConfig (persisted).");
             args.Context.AddString("  Phase A/B knobs: HoldAttackCooldown, SwingStaggerMs, FormationReshuffleSeconds,");
             args.Context.AddString("    ChargeMaxSeconds, OrderMinDwellSeconds, OrderScoreHysteresis,");
-            args.Context.AddString("    RomanWallOuter, RomanWallInner, FlankSplitMeters, IsolateBuddyMeters, DiscoveryBurst*");
+            args.Context.AddString("    RomanStandoffDistance, RomanStandoffHoldMin/Max, RomanContactSwingRange, RomanRetreatPauseSeconds,");
+            args.Context.AddString("    VikingStandoffDistance, VikingIndoorsStandoff, VikingContactSwingRange, FlankSplitMeters, DiscoveryBurst*");
             args.Context.AddString($"  Local executor tuning: HoldAttackCooldown={CombatTuning.HoldAttackCooldown} SwingStaggerMs={CombatTuning.SwingStaggerMs}");
         }
 

@@ -1,6 +1,6 @@
 # Smarter combat brain — whole-hog design
 
-**Status:** Phase A shipped in **1.0.5** (2026-09-19). Phase B shipped in **1.0.6** (2026-09-22): order min-dwell, Roman + Ambush scored transitions, Charge re-eval. Phase C/D not implemented.  
+**Status:** Phase A shipped in **1.0.5** (2026-09-19). Phase B shipped in **1.0.6** (2026-09-22): order min-dwell, Roman + Ambush scored transitions, Charge re-eval. **1.0.7** makes HoldGround rare and replaces the Roman/Viking eternal wall with a standoff → press → contact cadence. Design-doc Phase C/D (role stagger, pluggable utilities) are not in this build.  
 **Pipeline:** proven on **1.0.4** — server commander → peer-targeted `FT_MemberIntents` RPC → owning-client `CombatDriver.Drive`.  
 **Scope of this doc:** decision + actuation design. **Do not** rebuild transport. **Do not** implement or deploy from this document alone.
 
@@ -560,6 +560,7 @@ Client trusts RPC; ignore stale intents (existing stale counter). Optional: requ
 - Charge/FlashCharge still hard-caps at `ChargeMaxSeconds`, then re-evals: Ambush → Kite, Roman with missiles still up → ProtectMissiles, jelly → FocusFire, others → Peel. **DeathRush never leaves Charge while a threat exists.**
 - Ambush flash, only from Flank/FocusFire inside the inner band: `TargetIsolated` OR `ThreatStaggeredOrLow` OR `FlankOpportunity` (one player in the contact band, or players split > `FlankSplitMeters`). Otherwise contact is Kite, not Hold. After every Charge, force Kite (dwell bypass). No blob Charge on first contact.
 - `ft set` keys: `OrderMinDwellSeconds`, `OrderScoreHysteresis`, `RomanWallOuter` (18), `RomanWallInner` (14). `ChargeMaxSeconds` was already settable.
+- **1.0.7** banded cadence: `RomanStandoffDistance` (20), hold roll `RomanStandoffHoldMin/Max` (1/15), `RomanContactSwingRange` (3.5), `RomanRetreatPauseSeconds` (1). Viking mirrors that on `VikingStandoffDistance` (14) / indoors 12 / hold max 8. `RomanWallOuter/Inner` stay bound but do not pin the wall. Advance never sets HoldGround for standing on a slot.
 - Phase C/D (role stagger, flanker slots, pluggable utilities beyond the existing scorer hook) are not in this build.
 
 ---

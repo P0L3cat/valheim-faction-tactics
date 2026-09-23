@@ -7,23 +7,30 @@ using FactionTactics.Squad;
 namespace FactionTactics.Doctrine
 {
     /// <summary>
-    /// Skeleton* → Roman: shield wall + archers first, not charge-heavy.
-    /// Default ProtectMissiles / FocusFire under ShieldWall when missiles + threat in range
-    /// (not eternal Hold). Front HoldGround; missiles PreferKeepRange.
-    /// Advance only to close into the ~14–18m wall band; Charge almost never.
-    /// When PreferRanged: Charge only last-resort casualties (never default Charge).
-    /// Phase B: scored transitions + hysteresis. Wall band is <c>ft set</c>able.
+    /// Skeleton* → Roman shield wall + archers.
+    /// 1.0.7 cadence: Advance to ~20m standoff (HoldGround false), Hold for one roll of 1..15s,
+    /// Advance until the front line is in swing range, then Hold. If the player opens out of
+    /// swing, Hold 1s and press again. Missiles PreferKeepRange and never HoldGround.
+    /// PreferRanged Charge gate stays (last-resort only). Hysteresis must not trap a press —
+    /// the phase machine is authoritative; a timer expiry bypasses min-dwell.
     /// </summary>
     public sealed class RomanDoctrine : DoctrinePackBase
     {
-        /// <summary>Advance until threat is inside this outer wall band (meters).</summary>
+        /// <summary>Legacy soft band. Cadence uses <see cref="StandoffDistance"/>.</summary>
         public const float WallOuter = 18f;
 
-        /// <summary>Prefer Hold wall once inside this inner band (meters).</summary>
+        /// <summary>Legacy soft band. Not the cadence hold line.</summary>
         public const float WallInner = 14f;
 
-        /// <summary>Legacy no-missile hold line (meters).</summary>
-        public const float NoMissileHoldLine = 12f;
+        /// <summary>Default standoff line (meters). Live value is RomanStandoffDistance.</summary>
+        public const float StandoffDistance = 20f;
+
+        /// <summary>Default front-line swing / contact band (meters).</summary>
+        public const float DefaultSwingRange = 3.5f;
+
+        public const float StandoffHoldMin = 1f;
+        public const float StandoffHoldMax = 15f;
+        public const float RetreatPauseSeconds = 1f;
 
         /// <summary>Tight band once a rare Charge is committed (meters).</summary>
         public const float ChargeCommitBand = 5f;
@@ -64,145 +71,45 @@ namespace FactionTactics.Doctrine
         {
             // Hard gates — not score flips. Threat lost and shattered packs leave immediately.
             if (snapshot.ThreatCount <= 0)
+            {
+                BandedCadence.Reset(snapshot);
                 return DoctrineOrderKind.Hold;
+            }
             if (snapshot.IsBroken || snapshot.CasualtyRatio >= 0.45f)
                 return DoctrineOrderKind.RetreatAndReform;
 
-            var scores = ScoreOrders(snapshot, previous);
-            OrderTransition.FoldActionScorer(scores, snapshot);
-            return OrderTransition.Pick(scores, previous);
-        }
+            var profile = LiveProfile();
+            BandedCadence.Step(snapshot, profile);
+            var order = BandedCadence.OrderFor(snapshot.RomanPhase);
 
-        /// <summary>
-        /// Missile line inside the wall band. Charge is vetoed unless <see cref="ShouldCharge"/>.
-        /// Kite and Flank stay vetoed. Near the wall edges, scores compress so hysteresis
-        /// stops one-step Advance/Focus flicker.
-        /// </summary>
-        internal static Dictionary<DoctrineOrderKind, float> ScoreOrders(
-            SquadSnapshot snapshot,
-            DoctrineOrderKind? previous)
-        {
-            var scores = OrderTransition.Blank();
-            var wall = LiveWall();
-            var outer = wall.outer;
-            var inner = wall.inner;
-            var d = snapshot.NearestThreatDistance;
+            // PreferRanged charge gate stays. Cadence is still authoritative: a scorer
+            // cannot resurrect Charge, and hysteresis cannot keep Hold once the timer says press.
             var hasMissiles = snapshot.CountByRole(SquadRole.Missile) > 0;
-            var preferRanged = PreferRanged;
             var chargeBand = EffectiveChargeRange(snapshot);
-            var should = ShouldCharge(snapshot, hasMissiles, preferRanged, chargeBand);
-            // Commit band cannot keep a Charge that the charge gate already rejected.
-            if (should && previous == DoctrineOrderKind.Charge && d > ChargeCommitBand)
+            var should = ShouldCharge(snapshot, hasMissiles, PreferRanged, chargeBand);
+            if (should && previous == DoctrineOrderKind.Charge
+                && BandedCadence.BandDistance(snapshot) > ChargeCommitBand)
                 should = false;
 
-            if (d > outer || d > snapshot.AdvanceRange)
-            {
-                scores[DoctrineOrderKind.Advance] = 3.1f;
-                scores[DoctrineOrderKind.FocusFire] = hasMissiles ? 0.55f : -8f;
-                scores[DoctrineOrderKind.Hold] = 0.4f;
-                scores[DoctrineOrderKind.Charge] = -8f;
-                OrderTransition.SoftenEdge(
-                    scores,
-                    DoctrineOrderKind.Advance,
-                    hasMissiles ? DoctrineOrderKind.FocusFire : DoctrineOrderKind.Hold,
-                    d,
-                    Math.Min(outer, snapshot.AdvanceRange));
-                return scores;
-            }
+            var inContact = snapshot.RomanPhase == RomanPhase.ContactHold
+                            || snapshot.RomanPhase == RomanPhase.PressContact;
+            if (should && inContact)
+                return DoctrineOrderKind.Charge;
 
-            if (hasMissiles)
-            {
-                var press = d <= outer
-                            && (snapshot.MissileThreatened
-                                || previous == DoctrineOrderKind.ProtectMissiles
-                                || previous == DoctrineOrderKind.FocusFire
-                                || d <= inner);
-                if (should)
-                {
-                    scores[DoctrineOrderKind.Charge] = 3.6f;
-                    scores[DoctrineOrderKind.ProtectMissiles] = 1.5f;
-                    scores[DoctrineOrderKind.FocusFire] = 1.2f;
-                    scores[DoctrineOrderKind.Hold] = 0.8f;
-                }
-                else
-                {
-                    scores[DoctrineOrderKind.Charge] = -8f;
-                    scores[DoctrineOrderKind.Hold] = 0.35f;
-                    if (press)
-                    {
-                        scores[DoctrineOrderKind.ProtectMissiles] = 2.8f;
-                        scores[DoctrineOrderKind.FocusFire] = 1.35f;
-                    }
-                    else
-                    {
-                        scores[DoctrineOrderKind.FocusFire] = 2.8f;
-                        scores[DoctrineOrderKind.ProtectMissiles] = 1.2f;
-                    }
-                }
+            return order;
+        }
 
-                var span = Math.Max(0.01f, outer - inner);
-                scores[DoctrineOrderKind.Advance] = d > inner
-                    ? 1.05f + 0.35f * ((d - inner) / span)
-                    : 0.4f;
-                OrderTransition.SoftenEdge(scores, DoctrineOrderKind.Advance, DoctrineOrderKind.FocusFire, d, outer);
-                OrderTransition.SoftenEdge(
-                    scores,
-                    DoctrineOrderKind.FocusFire,
-                    DoctrineOrderKind.ProtectMissiles,
-                    d,
-                    inner);
-                return scores;
-            }
-
-            if (preferRanged)
-            {
-                if (should)
-                {
-                    scores[DoctrineOrderKind.Charge] = 3.5f;
-                    scores[DoctrineOrderKind.Hold] = 1.4f;
-                    scores[DoctrineOrderKind.Advance] = 0.6f;
-                }
-                else
-                {
-                    scores[DoctrineOrderKind.Charge] = -8f;
-                    if (d > inner)
-                    {
-                        scores[DoctrineOrderKind.Advance] = 2.8f;
-                        scores[DoctrineOrderKind.Hold] = 1.0f;
-                    }
-                    else
-                    {
-                        scores[DoctrineOrderKind.Hold] = 2.8f;
-                        scores[DoctrineOrderKind.Advance] = 0.55f;
-                    }
-                }
-
-                OrderTransition.SoftenEdge(scores, DoctrineOrderKind.Hold, DoctrineOrderKind.Advance, d, inner);
-                return scores;
-            }
-
-            // PreferRanged off, no missiles: Advance outside the hold line, Charge only in band.
-            scores[DoctrineOrderKind.Charge] = should ? 3.4f : -8f;
-            if (d > chargeBand)
-            {
-                if (d > NoMissileHoldLine)
-                {
-                    scores[DoctrineOrderKind.Advance] = 2.8f;
-                    scores[DoctrineOrderKind.Hold] = 1.0f;
-                }
-                else
-                {
-                    scores[DoctrineOrderKind.Hold] = 2.8f;
-                    scores[DoctrineOrderKind.Advance] = 0.7f;
-                }
-            }
-            else
-            {
-                scores[DoctrineOrderKind.Hold] = should ? 1.2f : 2.6f;
-                scores[DoctrineOrderKind.Advance] = 0.4f;
-            }
-
-            return scores;
+        /// <summary>Live standoff / swing / hold roll from <c>ft set</c>.</summary>
+        public static CadenceProfile LiveProfile()
+        {
+            var standoff = PluginConfig.RomanStandoffDistance?.Value ?? StandoffDistance;
+            var swing = PluginConfig.RomanContactSwingRange?.Value
+                        ?? PluginConfig.RomanChargeRange?.Value
+                        ?? DefaultSwingRange;
+            var min = PluginConfig.RomanStandoffHoldMin?.Value ?? StandoffHoldMin;
+            var max = PluginConfig.RomanStandoffHoldMax?.Value ?? StandoffHoldMax;
+            var pause = PluginConfig.RomanRetreatPauseSeconds?.Value ?? RetreatPauseSeconds;
+            return CadenceProfile.Resolve(standoff, swing, min, max, pause);
         }
 
         /// <summary>Live wall from <c>ft set</c>, clamped so inner stays inside outer.</summary>

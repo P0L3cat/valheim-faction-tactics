@@ -196,8 +196,10 @@ namespace FactionTactics.Squad
                 squad.LastIsBroken = threats.IsBroken;
 
                 var snapshot = SquadSnapshot.FromSquad(squad, threats);
+                BandedCadence.ReadInto(snapshot, state);
 
                 var order = _commander.Propose(snapshot);
+                BandedCadence.WriteBack(state, snapshot);
                 if (order == null)
                 {
                     Plugin.Log?.LogInfo(
@@ -748,6 +750,7 @@ namespace FactionTactics.Squad
 #if VALHEIM_REFS
             int engaged = 0;
             float nearest = float.MaxValue;
+            float frontNearest = float.MaxValue;
             Vector3 centroid = Vector3.zero;
             int alivePos = 0;
             foreach (var m in squad.Members)
@@ -765,6 +768,9 @@ namespace FactionTactics.Squad
                         var d = Vector3.Distance(m.Position, target.transform.position);
                         if (d < nearest)
                             nearest = d;
+                        if ((m.AssignedRole == SquadRole.Front || m.AssignedRole == SquadRole.Leader)
+                            && d < frontNearest)
+                            frontNearest = d;
 
                         TryThreatConditionFlags(target, assessment);
                     }
@@ -791,6 +797,19 @@ namespace FactionTactics.Squad
                         if (d < nearest)
                             nearest = d;
                     }
+                    foreach (var m in squad.Members)
+                    {
+                        if (!m.IsAlive)
+                            continue;
+                        if (m.AssignedRole != SquadRole.Front && m.AssignedRole != SquadRole.Leader)
+                            continue;
+                        foreach (var pp in players)
+                        {
+                            var fd = Vector3.Distance(m.Position, pp);
+                            if (fd <= 48f && fd < frontNearest)
+                                frontNearest = fd;
+                        }
+                    }
                     if (nearest < float.MaxValue && nearest <= 48f)
                     {
                         if (assessment.ThreatCount <= 0)
@@ -805,6 +824,9 @@ namespace FactionTactics.Squad
                 && squad.Members.Exists(m => m.AssignedRole == SquadRole.Missile);
 
             ApplyFlankAndIsolate(centroid, nearest, assessment);
+
+            if (frontNearest < float.MaxValue * 0.5f)
+                assessment.FrontlineThreatDistance = frontNearest;
 
             EnrichTrollProximity(centroid, assessment);
             EnrichEnvironmentHeuristics(squad, centroid, assessment);
@@ -822,7 +844,10 @@ namespace FactionTactics.Squad
             if (squad.DebugThreatCount.HasValue)
                 assessment.ThreatCount = squad.DebugThreatCount.Value;
             if (squad.DebugNearestThreatDistance.HasValue)
+            {
                 assessment.NearestDistance = squad.DebugNearestThreatDistance.Value;
+                assessment.FrontlineThreatDistance = squad.DebugNearestThreatDistance.Value;
+            }
 
             var aliveForSiege = alive;
             assessment.AssaultActive =

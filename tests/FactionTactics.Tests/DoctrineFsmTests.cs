@@ -15,20 +15,15 @@ namespace FactionTactics.Tests
             var cmd = FakeSnapshots.CreateCommander();
             var seq = FakeSnapshots.DriveFsm(cmd, FakeSnapshots.Roman(), 5, (snap, prev) =>
             {
-                // far → wall band → close (still with missiles) — must not Charge
+                // Far closes into the standoff band. Fresh snaps re-enter from Idle,
+                // so 16m is a standoff Hold, not an eternal missile-line Focus.
                 if (prev == null)
                     return FakeSnapshots.WithThreat(snap, 40f);
-                if (prev == DoctrineOrderKind.Hold || prev == DoctrineOrderKind.Advance)
-                    return FakeSnapshots.WithThreat(FakeSnapshots.Roman(), 16f);
-                if (prev == DoctrineOrderKind.FocusFire || prev == DoctrineOrderKind.ProtectMissiles)
-                    return FakeSnapshots.WithThreat(FakeSnapshots.Roman(), 5f);
-                return FakeSnapshots.WithThreat(FakeSnapshots.Roman(), 3f);
+                return FakeSnapshots.WithThreat(FakeSnapshots.Roman(), 16f);
             });
 
             Assert.Contains(DoctrineOrderKind.Advance, seq);
-            Assert.Contains(seq, k => k == DoctrineOrderKind.FocusFire
-                                      || k == DoctrineOrderKind.ProtectMissiles
-                                      || k == DoctrineOrderKind.Hold);
+            Assert.Contains(DoctrineOrderKind.Hold, seq);
             Assert.DoesNotContain(DoctrineOrderKind.Charge, seq); // missiles present → no Charge
             Assert.DoesNotContain(DoctrineOrderKind.Kite, seq); // Roman does not kite
         }
@@ -37,11 +32,12 @@ namespace FactionTactics.Tests
         public void Roman_does_not_charge_at_8m_holds_missile_line()
         {
             var cmd = FakeSnapshots.CreateCommander();
+            // 8m is inside the 20m standoff and outside swing — one rolled Hold, not Charge.
             var mid = FakeSnapshots.WithThreat(FakeSnapshots.Roman(), 8f);
             mid.PreviousOrderKind = nameof(DoctrineOrderKind.Advance);
             var order = cmd.Propose(mid);
-            Assert.True(order!.OrderKind == DoctrineOrderKind.FocusFire
-                        || order.OrderKind == DoctrineOrderKind.ProtectMissiles);
+            Assert.Equal(DoctrineOrderKind.Hold, order!.OrderKind);
+            Assert.Equal(RomanPhase.StandoffHold, mid.RomanPhase);
             Assert.NotEqual(DoctrineOrderKind.Charge, order.OrderKind);
         }
 
@@ -51,7 +47,7 @@ namespace FactionTactics.Tests
             var cmd = FakeSnapshots.CreateCommander();
             var snap = FakeSnapshots.WithCombatRoles(FakeSnapshots.Base("roman", 4), front: 3, missile: 0, flanker: 0, leader: 1);
 
-            var far = FakeSnapshots.WithThreat(snap, 20f);
+            var far = FakeSnapshots.WithThreat(snap, 28f);
             Assert.Equal(DoctrineOrderKind.Advance, cmd.Propose(far)!.OrderKind);
 
             var holdLine = FakeSnapshots.WithThreat(
@@ -97,9 +93,14 @@ namespace FactionTactics.Tests
                         || order.OrderKind == DoctrineOrderKind.ProtectMissiles
                         || order.OrderKind == DoctrineOrderKind.Hold);
 
-            var fled = FakeSnapshots.WithThreat(FakeSnapshots.Roman(), 20f);
+            var fled = FakeSnapshots.WithThreat(FakeSnapshots.Roman(), 32f);
             fled.PreviousOrderKind = nameof(DoctrineOrderKind.Charge);
             Assert.Equal(DoctrineOrderKind.Advance, cmd.Propose(fled)!.OrderKind);
+
+            // Exactly on the standoff line: Hold, do not keep charging.
+            var atLine = FakeSnapshots.WithThreat(FakeSnapshots.Roman(), 20f);
+            atLine.PreviousOrderKind = nameof(DoctrineOrderKind.Charge);
+            Assert.Equal(DoctrineOrderKind.Hold, cmd.Propose(atLine)!.OrderKind);
         }
 
         [Fact]
@@ -196,17 +197,22 @@ namespace FactionTactics.Tests
         public void Viking_shield_wall_holds_then_charges_close()
         {
             var cmd = FakeSnapshots.CreateCommander();
-            var far = cmd.Propose(FakeSnapshots.WithThreat(FakeSnapshots.Viking(), 40f));
+            var farSnap = FakeSnapshots.WithThreat(FakeSnapshots.Viking(), 40f);
+            var far = cmd.Propose(farSnap);
             Assert.Equal(DoctrineOrderKind.Advance, far!.OrderKind);
+            Assert.Equal(RomanPhase.ApproachStandoff, farSnap.RomanPhase);
 
+            // Inside the ~14m standoff, outside swing: Hold, not a Charge.
             var close = FakeSnapshots.WithThreat(FakeSnapshots.Viking(), 8f);
-            close.PreviousOrderKind = nameof(DoctrineOrderKind.FocusFire);
-            var charge = cmd.Propose(close);
-            Assert.Equal(DoctrineOrderKind.Charge, charge!.OrderKind);
+            close.PreviousOrderKind = nameof(DoctrineOrderKind.Advance);
+            var hold = cmd.Propose(close);
+            Assert.Equal(DoctrineOrderKind.Hold, hold!.OrderKind);
+            Assert.Equal(RomanPhase.StandoffHold, close.RomanPhase);
+            Assert.NotEqual(DoctrineOrderKind.Charge, hold.OrderKind);
 
-            var after = FakeSnapshots.WithThreat(FakeSnapshots.Viking(), 8f);
-            after.PreviousOrderKind = nameof(DoctrineOrderKind.Charge);
-            Assert.Equal(DoctrineOrderKind.RetreatAndReform, cmd.Propose(after)!.OrderKind);
+            var broken = FakeSnapshots.WithThreat(FakeSnapshots.Viking(), 8f);
+            broken.IsBroken = true;
+            Assert.Equal(DoctrineOrderKind.RetreatAndReform, cmd.Propose(broken)!.OrderKind);
         }
 
         [Fact]

@@ -1,8 +1,8 @@
 {
   "name": "FactionTactics_Server",
-  "version_number": "1.0.6",
+  "version_number": "1.0.7",
   "website_url": "https://github.com/P0L3cat/valheim-faction-tactics",
-  "description": "Server commander for Faction Tactics 1.0.6: Phase B dwell + Roman/Ambush scores. Pair with Client 1.0.6. Behavior-only (no extra spawns).",
+  "description": "Server commander for Faction Tactics 1.0.7: banded HoldGround + Roman/Viking standoff cadence. Pair with Client 1.0.7. Behavior-only (no extra spawns).",
   "dependencies": [
     "denikson-BepInExPack_Valheim-5.4.2202"
   ]

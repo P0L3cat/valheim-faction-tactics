@@ -128,15 +128,25 @@ namespace FactionTactics.Tests
         public void Roman_wall_edge_hysteresis_does_not_flip_one_step_outside_Focus()
         {
             var cmd = FakeSnapshots.CreateCommander();
-            var edge = FakeSnapshots.WithThreat(FakeSnapshots.Roman(), 17.95f);
+            // Just outside the 20m standoff: keep Advancing. One step inside: standoff Hold.
+            var edge = FakeSnapshots.WithThreat(FakeSnapshots.Roman(), 20.4f);
             edge.PreviousOrderKind = nameof(DoctrineOrderKind.Advance);
             Assert.Equal(DoctrineOrderKind.Advance, cmd.Propose(edge)!.OrderKind);
+            Assert.Equal(RomanPhase.ApproachStandoff, edge.RomanPhase);
 
-            var inside = FakeSnapshots.WithThreat(FakeSnapshots.Roman(), 16f);
+            var inside = FakeSnapshots.WithThreat(FakeSnapshots.Roman(), 19.2f);
             inside.PreviousOrderKind = nameof(DoctrineOrderKind.Advance);
             var order = cmd.Propose(inside);
-            Assert.True(order!.OrderKind == DoctrineOrderKind.FocusFire
-                        || order.OrderKind == DoctrineOrderKind.ProtectMissiles);
+            Assert.Equal(DoctrineOrderKind.Hold, order!.OrderKind);
+            Assert.Equal(RomanPhase.StandoffHold, inside.RomanPhase);
+
+            // Press does not fall back to Hold just because distance is inside the old wall.
+            var pressing = FakeSnapshots.WithThreat(FakeSnapshots.Roman(), 12f);
+            pressing.RomanPhase = RomanPhase.PressContact;
+            pressing.PreviousOrderKind = nameof(DoctrineOrderKind.Advance);
+            pressing.SquadAgeSeconds = 5f;
+            Assert.Equal(DoctrineOrderKind.Advance, cmd.Propose(pressing)!.OrderKind);
+            Assert.Equal(RomanPhase.PressContact, pressing.RomanPhase);
         }
 
         [Fact]

@@ -15,8 +15,11 @@ namespace FactionTactics.Orders
     /// </summary>
     public sealed class OrderApplicator
     {
-        /// <summary>Front/Leader snaps to HoldGround when within this of their slot (meters).</summary>
+        /// <summary>Front/Leader may pin HoldGround only inside this of their slot (meters).</summary>
         public const float FrontHoldSlotDist = 2.5f;
+
+        /// <summary>Other doctrines: HoldGround only when the threat is already in melee.</summary>
+        public const float GenericContactBand = 3.5f;
 
         /// <summary>Last applied order keyed by MonsterAI instance id (or hash).</summary>
         public static readonly System.Collections.Concurrent.ConcurrentDictionary<long, MemberIntent> Intents
@@ -29,6 +32,7 @@ namespace FactionTactics.Orders
             var jelly = string.Equals(doctrineId, "artillery-jelly", System.StringComparison.OrdinalIgnoreCase);
             var charred = string.Equals(doctrineId, "charred-legion", System.StringComparison.OrdinalIgnoreCase);
             var roman = string.Equals(doctrineId, "roman", System.StringComparison.OrdinalIgnoreCase);
+            var viking = string.Equals(doctrineId, "viking-shieldwall", System.StringComparison.OrdinalIgnoreCase);
             var ambush = string.Equals(doctrineId, "ambush", System.StringComparison.OrdinalIgnoreCase);
             var deathRush = string.Equals(doctrineId, "death-rush", System.StringComparison.OrdinalIgnoreCase);
 
@@ -51,6 +55,18 @@ namespace FactionTactics.Orders
             // Threat-facing basis for ShieldWall / Line (centroid → threat / nearest player).
             var threatPos = TryGetSquadThreatPosition(squad, centroid);
             BuildFacingBasis(centroid, threatPos, out var right, out var forward);
+
+            var cadencePhase = runtime?.RomanPhase ?? RomanPhase.Idle;
+            var anchorShift = Vector3.zero;
+            if ((roman || viking)
+                && threatPos.HasValue
+                && (cadencePhase == RomanPhase.ApproachStandoff || cadencePhase == RomanPhase.PressContact))
+            {
+                var keep = KeepDistance(roman, cadencePhase, runtime);
+                anchorShift = ComputeAnchorShift(centroid, threatPos.Value, keep);
+            }
+
+            var distToThreat = ResolveThreatDistance(squad, runtime);
 
             var fallbackIndex = 0;
             foreach (var member in squad.Members)
@@ -124,22 +140,7 @@ namespace FactionTactics.Orders
                         || order.OrderKind == DoctrineOrderKind.Advance))
                     keepRange = true;
 
-                // Cavalry / Asksvin: never HoldGround in the rank; always allow skirmish chase on Flank.
-                // Missiles never HoldGround on Hold/ProtectMissiles — MoveTo rear slot + PreferKeepRange.
-                var holdGround = !isCavalry
-                    && !isMissile
-                    && !isWallBreaker // wall-breakers must leave formation slots to press pieces
-                    && (order.OrderKind == DoctrineOrderKind.Hold
-                        || (order.OrderKind == DoctrineOrderKind.ProtectMissiles && !assaultMissileCover));
-
-                // Missiles on FocusWallman may hold/skirmish rear while fronts breach.
-                if (assaultMissileCover)
-                    holdGround = false;
-
-                // Flankers never inherit Front HoldGround (applicator invariant — Ambush/Asksvin/all).
-                if (member.AssignedRole == SquadRole.Flanker)
-                    holdGround = false;
-
+                // HoldGround is decided once, after slot distance is known. Moving orders never pin.
                 var allowChase = !keepRange
                     && !jelly
                     && (order.OrderKind == DoctrineOrderKind.Charge
@@ -159,7 +160,6 @@ namespace FactionTactics.Orders
                 // Death-Rush (Meadows Greyling): bee-line Charge — never HoldGround / PreferKeepRange / kite.
                 if (deathRush)
                 {
-                    holdGround = false;
                     keepRange = false;
                     if (order.OrderKind == DoctrineOrderKind.Charge)
                         allowChase = true;
@@ -190,49 +190,64 @@ namespace FactionTactics.Orders
                     // Chase players only, not structures — PreferKeepRange + AllowVanillaChase for combat target.
                 }
 
-                // Roman / ShieldWall Front: form up to slots FIRST, then pin.
-                // Bug (0.2.0–0.2.1): Hold always set HoldGround=true → DriveControlledAI StopMoving
-                // at spawn blob → log said ShieldWall but no visible line. Fix: HoldGround only
-                // when HorizontalDistance(member, slot) <= FrontHoldSlotDist.
+                // Form up on the slot, then pin HoldGround only in a banded hold phase
+                // (or a strict contact Hold for other doctrines). Advance/Charge/Flank/Kite/Retreat
+                // never pin, even when distToSlot is 0 — that near-slot rule was the eternal wall.
                 var isFrontLine = member.AssignedRole == SquadRole.Front
                                   || member.AssignedRole == SquadRole.Leader;
-                var lineHoldingOrder = order.OrderKind == DoctrineOrderKind.Hold
-                                       || order.OrderKind == DoctrineOrderKind.Advance
-                                       || order.OrderKind == DoctrineOrderKind.ProtectMissiles;
                 var shieldOrLine = order.Formation == FormationType.ShieldWall
                                    || order.Formation == FormationType.Line;
+                var movingCadence = (roman || viking)
+                    && (cadencePhase == RomanPhase.ApproachStandoff
+                        || cadencePhase == RomanPhase.PressContact);
+                var distToSlot = HorizontalDistance(member.Position, slot);
 
                 var desired = slot;
-                if (!isWallBreaker && !isCavalry && !isMissile && isFrontLine && (roman || shieldOrLine))
+                if (movingCadence && !isWallBreaker && !isCavalry)
                 {
-                    var distToSlot = HorizontalDistance(member.Position, slot);
+                    desired = slot + anchorShift;
+                    if (isFrontLine && !isMissile)
+                        allowChase = false;
+                }
+                else if (order.OrderKind == DoctrineOrderKind.Charge && !keepRange)
+                {
+                    var threat = TryGetThreatPosition(member, centroid);
+                    if (threat.HasValue)
+                        desired = threat.Value;
+                }
+                else if (!isWallBreaker && !isCavalry && !isMissile && isFrontLine && (roman || viking || shieldOrLine)
+                         && (order.OrderKind == DoctrineOrderKind.Hold
+                             || order.OrderKind == DoctrineOrderKind.Advance
+                             || order.OrderKind == DoctrineOrderKind.ProtectMissiles
+                             || order.OrderKind == DoctrineOrderKind.FocusFire))
+                {
+                    desired = slot;
                     allowChase = false;
-                    if (order.OrderKind == DoctrineOrderKind.Hold
-                        || order.OrderKind == DoctrineOrderKind.ProtectMissiles
-                        || (roman && (order.OrderKind == DoctrineOrderKind.Advance
-                                      || order.OrderKind == DoctrineOrderKind.FocusFire))
-                        || lineHoldingOrder)
-                    {
-                        desired = slot;
-                        holdGround = distToSlot <= FrontHoldSlotDist;
-                    }
                 }
-                else if (!holdGround
-                    && order.OrderKind == DoctrineOrderKind.Charge)
-                {
-                    var threat = TryGetThreatPosition(member, centroid);
-                    if (threat.HasValue)
-                        desired = threat.Value;
-                }
-                else if (!holdGround
-                    && !keepRange
+                else if (!keepRange
                     && order.OrderKind == DoctrineOrderKind.FocusFire
-                    && !roman)
+                    && !roman
+                    && !viking)
                 {
                     var threat = TryGetThreatPosition(member, centroid);
                     if (threat.HasValue)
                         desired = threat.Value;
                 }
+
+                var holdGround = AllowHoldGround(
+                    doctrineId,
+                    order.OrderKind,
+                    member.AssignedRole,
+                    isMissile,
+                    isCavalry,
+                    isWallBreaker,
+                    distToThreat,
+                    distToSlot,
+                    cadencePhase);
+
+                // Hot assault missiles cover players; they do not plant.
+                if (assaultMissileCover)
+                    holdGround = false;
 
                 var intent = new MemberIntent
                 {
@@ -314,6 +329,119 @@ namespace FactionTactics.Orders
 
         public static bool TryGetIntent(long instanceId, out MemberIntent intent)
             => Intents.TryGetValue(instanceId, out intent!);
+
+        /// <summary>
+        /// HoldGround is rare. False for missiles, flankers, cavalry, wall-breakers, and every
+        /// moving order (Advance / Charge / Flank / Kite / RetreatAndReform), even at distToSlot 0.
+        /// Roman and Viking pin only in standoff, contact, or retreat-pause, and only near the slot.
+        /// Ambush pins only on Hold, near the slot, with the player inside the harass pocket.
+        /// Everyone else: Hold or ProtectMissiles, near the slot, and inside <see cref="GenericContactBand"/>.
+        /// </summary>
+        public static bool AllowHoldGround(
+            string? doctrineId,
+            DoctrineOrderKind order,
+            SquadRole role,
+            bool isMissile,
+            bool isCavalry,
+            bool isWallBreaker,
+            float distToThreat,
+            float distToSlot,
+            RomanPhase phase)
+        {
+            if (Eq(doctrineId, "death-rush"))
+                return false;
+            if (isMissile || isCavalry || isWallBreaker || role == SquadRole.Flanker)
+                return false;
+            if (role != SquadRole.Front && role != SquadRole.Leader)
+                return false;
+
+            switch (order)
+            {
+                case DoctrineOrderKind.Advance:
+                case DoctrineOrderKind.Charge:
+                case DoctrineOrderKind.Flank:
+                case DoctrineOrderKind.Kite:
+                case DoctrineOrderKind.RetreatAndReform:
+                case DoctrineOrderKind.FocusFire:
+                    return false;
+            }
+
+            if (order != DoctrineOrderKind.Hold && order != DoctrineOrderKind.ProtectMissiles)
+                return false;
+            if (float.IsNaN(distToSlot) || distToSlot > FrontHoldSlotDist)
+                return false;
+
+            if (Eq(doctrineId, "roman") || Eq(doctrineId, "viking-shieldwall"))
+            {
+                return phase == RomanPhase.StandoffHold
+                       || phase == RomanPhase.ContactHold
+                       || phase == RomanPhase.RetreatPause;
+            }
+
+            if (Eq(doctrineId, "ambush"))
+            {
+                if (order != DoctrineOrderKind.Hold)
+                    return false;
+                if (float.IsNaN(distToThreat) || float.IsInfinity(distToThreat))
+                    return false;
+                var outer = PluginConfig.AmbushOuterPocket?.Value ?? AmbushDoctrine.OuterPocket;
+                if (float.IsNaN(outer) || float.IsInfinity(outer) || outer < 2f)
+                    outer = AmbushDoctrine.OuterPocket;
+                return distToThreat <= outer;
+            }
+
+            if (float.IsNaN(distToThreat) || float.IsInfinity(distToThreat))
+                return false;
+            return distToThreat <= GenericContactBand;
+        }
+
+        /// <summary>
+        /// Shift a formation centroid onto the standoff or swing line facing <paramref name="threat"/>.
+        /// Zero when already inside that keep distance (don't walk backward off a good line).
+        /// </summary>
+        public static Vector3 ComputeAnchorShift(Vector3 centroid, Vector3 threat, float keepDistance)
+        {
+            var delta = threat - centroid;
+            delta.y = 0f;
+            var distSq = delta.x * delta.x + delta.z * delta.z;
+            if (distSq < 0.0001f || float.IsNaN(keepDistance) || keepDistance < 0.5f)
+                return Vector3.zero;
+            var dist = (float)System.Math.Sqrt(distSq);
+            if (dist <= keepDistance)
+                return Vector3.zero;
+            var inv = 1f / dist;
+            var anchor = new Vector3(
+                threat.x - delta.x * inv * keepDistance,
+                centroid.y,
+                threat.z - delta.z * inv * keepDistance);
+            return anchor - centroid;
+        }
+
+        private static float KeepDistance(bool roman, RomanPhase phase, SquadRuntimeState? runtime)
+        {
+            if (phase == RomanPhase.PressContact)
+            {
+                if (runtime != null && runtime.ActiveSwingRange > 0.5f)
+                    return runtime.ActiveSwingRange;
+                return roman ? RomanDoctrine.DefaultSwingRange : VikingShieldWallDoctrine.DefaultSwingRange;
+            }
+
+            if (runtime != null && runtime.ActiveStandoffDistance > 0.5f)
+                return runtime.ActiveStandoffDistance;
+            return roman ? RomanDoctrine.StandoffDistance : VikingShieldWallDoctrine.StandoffDistance;
+        }
+
+        private static float ResolveThreatDistance(SquadUnit squad, SquadRuntimeState? runtime)
+        {
+            if (runtime != null && runtime.LastThreatDistance < float.MaxValue * 0.5f)
+                return runtime.LastThreatDistance;
+            if (squad.DebugNearestThreatDistance.HasValue)
+                return squad.DebugNearestThreatDistance.Value;
+            return runtime?.LastThreatDistance ?? float.MaxValue;
+        }
+
+        private static bool Eq(string? a, string b)
+            => string.Equals(a, b, System.StringComparison.OrdinalIgnoreCase);
 
         private static Vector3 ComputeCentroid(SquadUnit squad)
         {

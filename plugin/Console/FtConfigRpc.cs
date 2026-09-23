@@ -7,7 +7,7 @@ using HarmonyLib;
 namespace FactionTactics.ConsoleCmds
 {
     /// <summary>
-    /// 1.0.6: client admin <c>ft</c> → dedicated PluginConfig via ZRoutedRpc.
+    /// 1.0.7: client admin <c>ft</c> → dedicated PluginConfig via ZRoutedRpc.
     /// Shared file: linked into FactionTactics.Client (FT_CLIENT) and server plugin.
     /// </summary>
     public static class FtConfigRpc
