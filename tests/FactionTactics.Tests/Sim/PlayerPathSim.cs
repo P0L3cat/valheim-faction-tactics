@@ -84,6 +84,7 @@ namespace FactionTactics.Tests.Sim
         public float MeanDesiredToSticky { get; set; }
         public float MeanPositionToSticky { get; set; }
         public float MeanDesiredToCentroid { get; set; }
+        public float MeanPositionToCentroid { get; set; }
         /// <summary>Count of intents where PreferRun != !HoldGround.</summary>
         public int PreferRunViolations { get; set; }
         public List<MemberTickMetric> Members { get; } = new List<MemberTickMetric>();
@@ -114,6 +115,11 @@ namespace FactionTactics.Tests.Sim
         private Func<PlayerPathSim, float, int, SquadOrder>? _orderProvider;
         /// <summary>When set, players returning false are omitted from the candidate list (disappear).</summary>
         private Func<long, float, int, bool>? _playerVisible;
+        /// <summary>
+        /// Test-only: after sticky update, copy sticky/first-player world pos into
+        /// Squad.DebugThreatPosition + DebugFocus* so Charge/Advance facing reads the sim path.
+        /// </summary>
+        private bool _syncThreatFromPlayers;
 
         public SquadUnit? Squad => _squad;
         public SquadRuntimeState Runtime => _runtime;
@@ -182,6 +188,16 @@ namespace FactionTactics.Tests.Sim
             return this;
         }
 
+        /// <summary>
+        /// When true, each tick after Ambush sticky update sets DebugThreatPosition /
+        /// DebugFocusPlayer* from sticky (else first visible player). Offline only.
+        /// </summary>
+        public PlayerPathSim WithThreatSyncedFromPlayers(bool enabled = true)
+        {
+            _syncThreatFromPlayers = enabled;
+            return this;
+        }
+
         public List<(long id, Vector3 pos)> SamplePlayers(float time, int tickIndex = 0)
         {
             var list = new List<(long, Vector3)>(_players.Count);
@@ -215,6 +231,7 @@ namespace FactionTactics.Tests.Sim
                 var players = SamplePlayers(t, i);
                 var centroid = ComputeCentroid(_squad);
                 OrderApplicator.UpdateAmbushStickyAnchor(_runtime, centroid, players, _dt);
+                SyncThreatHooks(players);
 
                 var order = _orderProvider != null ? _orderProvider(this, t, i) : _order;
                 _order = order;
@@ -317,6 +334,7 @@ namespace FactionTactics.Tests.Sim
             float sumDesiredSticky = 0f;
             float sumPosSticky = 0f;
             float sumDesiredCentroid = 0f;
+            float sumPosCentroid = 0f;
             int nWithIntent = 0;
             int violations = 0;
 
@@ -345,6 +363,7 @@ namespace FactionTactics.Tests.Sim
                     sumDesiredSticky += Vector3.Distance(desired, sticky);
                     sumPosSticky += Vector3.Distance(m.Position, sticky);
                     sumDesiredCentroid += Vector3.Distance(desired, centroid);
+                    sumPosCentroid += Vector3.Distance(m.Position, centroid);
                     if (preferRun != !hold)
                         violations++;
                 }
@@ -362,7 +381,26 @@ namespace FactionTactics.Tests.Sim
             metrics.MeanDesiredToSticky = nWithIntent > 0 ? sumDesiredSticky / nWithIntent : 0f;
             metrics.MeanPositionToSticky = nWithIntent > 0 ? sumPosSticky / nWithIntent : 0f;
             metrics.MeanDesiredToCentroid = nWithIntent > 0 ? sumDesiredCentroid / nWithIntent : 0f;
+            metrics.MeanPositionToCentroid = nWithIntent > 0 ? sumPosCentroid / nWithIntent : 0f;
             return metrics;
+        }
+
+        private void SyncThreatHooks(List<(long id, Vector3 pos)> players)
+        {
+            if (!_syncThreatFromPlayers || _squad == null)
+                return;
+            if (_runtime.HasStickyPlayer)
+            {
+                _squad.DebugThreatPosition = _runtime.StickyPlayerPosition;
+                _squad.DebugFocusPlayerId = _runtime.StickyPlayerId;
+                _squad.DebugFocusPlayerPosition = _runtime.StickyPlayerPosition;
+                return;
+            }
+            if (players.Count == 0)
+                return;
+            _squad.DebugThreatPosition = players[0].pos;
+            _squad.DebugFocusPlayerId = players[0].id;
+            _squad.DebugFocusPlayerPosition = players[0].pos;
         }
 
         public static Vector3 ComputeCentroid(SquadUnit squad)
@@ -424,6 +462,36 @@ namespace FactionTactics.Tests.Sim
             foreach (var h in history)
                 n += h.PreferRunViolations;
             return n;
+        }
+
+        /// <summary>Mean member world-position distance to <paramref name="anchor"/> (living with intent).</summary>
+        public static float MeanPositionTo(TickMetrics tick, Vector3 anchor)
+        {
+            float sum = 0f;
+            int n = 0;
+            foreach (var m in tick.Members)
+            {
+                if (!m.HasIntent)
+                    continue;
+                sum += Vector3.Distance(m.Position, anchor);
+                n++;
+            }
+            return n == 0 ? 0f : sum / n;
+        }
+
+        /// <summary>Mean member DesiredPosition distance to <paramref name="anchor"/>.</summary>
+        public static float MeanDesiredTo(TickMetrics tick, Vector3 anchor)
+        {
+            float sum = 0f;
+            int n = 0;
+            foreach (var m in tick.Members)
+            {
+                if (!m.HasIntent)
+                    continue;
+                sum += Vector3.Distance(m.DesiredPosition, anchor);
+                n++;
+            }
+            return n == 0 ? 0f : sum / n;
         }
     }
 }

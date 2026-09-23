@@ -31,9 +31,11 @@ This Proof packet does **not** plate, deploy, or bounce. It is paper + offline t
 
 ## 1. Honest scope
 
+**Offline win conditions (Nate + Azog):** PRIMARY asserts are **geometric** over `PlayerPathSim` trajectories — mob world positions `M_i(t)` and Desired `D_i(t)` vs player/sticky path `P(t)` and pack centroid (XZ Dist / Delta / bands / radial / half-plane). See `tests/.../Sim/MotionPredicates.cs` and `MotionDoctrineTests`. PreferRun / mode enum / sticky bool / TheaterRole are **secondary support only**; a green that never reads `M`/`D` deltas is rejected.
+
 | Layer | What it proves | What it does **not** prove |
 |-------|----------------|----------------------------|
-| Offline xUnit (`InGameObservableContractTests` + friends) | Intent flags, sticky id/dwell math, FormUp magnet DesiredPosition, Theater role assignment, PreferRun = !HoldGround on intents | Valheim rendering, Sprint/Walk animation, client locomotion ownership, dedicated ZDO fights, actual camera feel |
+| Offline xUnit (`MotionDoctrineTests` + `InGameObservableContractTests` + friends) | Geometric motion predicates (orbit band+angular, flee radial, straggler close, pack σ, Charge vs FormUp, zero-magnet floors, Theater lateral); flags as support | Valheim rendering, Sprint/Walk animation, client locomotion ownership, dedicated ZDO fights, actual camera feel |
 | Heartbeat / `ft status` / BepInEx log | Discovery alive, order histograms, `theater: pin=… flank=… harass=…`, per-squad `theater=Pin` tags | That mobs *look* like a wall/orbit to a human |
 | In-game spawn + watch | Camera: advance sprint into slots, Hold plant, Ambush orbit YOU, skeleton Pin front vs greydwarf Harass/Flank kite, Deathrush Charge | That logs alone are enough (they are not) |
 
@@ -428,6 +430,8 @@ Azog R3 holes folded into offline Facts on this branch (no Azog re-call). Closed
 | Observable Ambush orbit angular variance soft | Threshold raised (`varAng > 0.20`) + max pairwise Desired angle spread `&gt; 1.0` rad |
 | Merge reattach intents-only | After merge: PreferRun true + Desired near parent centroid for absorbed members |
 | Observable PreferRun Advance-only | Ambush Flank/Kite Fact: PreferRun true, HoldGround false for living intents while moving |
+
+**Narvi geometric closeout (this branch):** Azog adversarial predicates implemented as PRIMARY offline wins in `MotionPredicates` / `MotionDoctrineTests`; soft flag-only Observable claims demoted to secondary. No production doctrine change; no plate.
 
 **Known residual for 1.0.12 (not fixed in production this closeout):**
 

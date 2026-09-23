@@ -121,6 +121,12 @@ namespace FactionTactics.Tests
             const int ticks = 40;
             var hist = sim.Run(ticks);
 
+            MotionPredicates.Require(
+                MotionPredicates.AmbushStickyOrbit(
+                    hist, rLo: 3f, rHi: 24f, bandFraction: 0.70f, flapsMax: 0,
+                    phiMin: 0.5f, angVarMin: 0.04f, playerPathMin: 6f, minTicks: 16, warmup: 4),
+                "Ambush_orbit_tracks_moving_sticky");
+
             Assert.True(hist.All(h => h.HasSticky), "sticky must stay acquired along the walk");
             Assert.True(hist.All(h => h.StickyId == 42L), "single-player walk must not flap sticky id");
 
@@ -132,6 +138,8 @@ namespace FactionTactics.Tests
                     $"tick {h.TickIndex}: mean slot→sticky {h.MeanDesiredToSticky:F2}m exceeds 20m band "
                     + $"(stickyX={h.StickyPosition.x:F1} stickyZ={h.StickyPosition.z:F1} "
                     + $"centroidX={h.PackCentroid.x:F1} centroidZ={h.PackCentroid.z:F1}) — slots glued behind?");
+                Assert.True(h.MeanPositionToSticky < 26f,
+                    $"tick {h.TickIndex}: mean Position→sticky {h.MeanPositionToSticky:F2}m exceeds band");
             }
 
             var earlyStickyX = hist[4].StickyPosition.x;
@@ -193,18 +201,21 @@ namespace FactionTactics.Tests
                 }
             }
 
+            var farId = squad.Members[4].InstanceId;
+            MotionPredicates.Require(
+                MotionPredicates.StragglerMerge(
+                    hist, farId, rOut: 20f, rIn: 16f, rPack: 22f, lastK: 4, minTicks: 10),
+                "PackAsUnit_chase_straggler");
+
             var d0 = hist[0].PackDiameter;
             var dLate = hist.Skip(hist.Count / 2).Average(h => h.PackDiameter);
-            var farId = squad.Members[4].InstanceId;
             var lateFar = hist[hist.Count - 1].Members.First(m => m.InstanceId == farId);
             var lateC = hist[hist.Count - 1].PackCentroid;
-            var magnetized = Vector3.Distance(lateFar.DesiredPosition, lateC) < 16f;
+            var magnetized = MotionPredicates.Dist(lateFar.DesiredPosition, lateC) < 16f;
 
             Assert.True(
                 dLate + 0.5f < d0 || magnetized,
-                $"pack diameter did not shrink (d0={d0:F1} dLate={dLate:F1}) and far member Desired "
-                + $"not magnetized near lattice (desiredX={lateFar.DesiredPosition.x:F1} "
-                + $"centroidX={lateC.x:F1}) — FormUp magnet gap");
+                $"supporting: diameter d0={d0:F1} dLate={dLate:F1} magnetized={magnetized}");
         }
 
         [Fact]

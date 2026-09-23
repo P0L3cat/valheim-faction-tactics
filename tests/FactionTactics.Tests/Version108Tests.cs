@@ -42,6 +42,15 @@ namespace FactionTactics.Tests
                 })
                 .Run(12);
 
+            var late = hist[hist.Count - 1];
+            var meanPos = late.Members.Average(m => MotionPredicates.Dist(m.Position, spawnCentroid));
+            var meanDesired = late.Members.Average(m => MotionPredicates.Dist(m.DesiredPosition, spawnCentroid));
+            Assert.True(meanPos > 1.5f,
+                $"PRIMARY: Advance Positions freeze-in-blob meanDist={meanPos:F2}");
+            Assert.True(meanDesired > 2f,
+                $"PRIMARY: Advance Desired freeze-in-blob meanDist={meanDesired:F2}");
+
+            // Secondary flags
             Assert.Equal(0, PlayerPathSim.TotalPreferRunViolations(hist));
             foreach (var tick in hist)
             {
@@ -51,10 +60,6 @@ namespace FactionTactics.Tests
                     Assert.False(m.HoldGround);
                 }
             }
-            var late = hist[hist.Count - 1];
-            var meanDesired = late.Members.Average(m => Vector3.Distance(m.DesiredPosition, spawnCentroid));
-            Assert.True(meanDesired > 2f,
-                $"Advance Desired still freeze-in-blob meanDist={meanDesired:F2} from spawn");
         }
 
         [Fact]

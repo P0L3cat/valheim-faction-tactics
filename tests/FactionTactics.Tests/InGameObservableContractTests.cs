@@ -13,8 +13,9 @@ namespace FactionTactics.Tests
 {
     /// <summary>
     /// Observable contracts named in docs/PROOF-1.0.11.md.
-    /// Offline proves intent/role/sticky math only — not Valheim pixels. See Proof §1–2.
-    /// Azog R1 closed: sticky dwell ticks, PreferRun multi-tick, straggler centroid, orbit spread, theater siblings cited in PROOF.
+    /// PRIMARY wins are Azog geometric predicates over PlayerPathSim trajectories
+    /// (world + sim character). Flag/enum/PreferRun asserts are secondary support only.
+    /// Offline cannot prove Valheim pixels — see Proof §1–2.
     /// </summary>
     public class InGameObservableContractTests
     {
@@ -48,8 +49,21 @@ namespace FactionTactics.Tests
                 })
                 .Run(16);
 
-            Assert.Equal(0, PlayerPathSim.TotalPreferRunViolations(hist));
             Assert.True(hist.Count >= 8);
+
+            // PRIMARY (geom): stepped Positions leave spawn blob; Desired leaves spawn.
+            var late = hist[hist.Count - 1];
+            var meanPosFromSpawn = late.Members.Average(m =>
+                MotionPredicates.Dist(m.Position, spawnCentroid));
+            var meanDesiredFromSpawn = late.Members.Average(m =>
+                MotionPredicates.Dist(m.DesiredPosition, spawnCentroid));
+            Assert.True(meanPosFromSpawn > 1.5f,
+                $"PRIMARY: Advance Positions still freeze-in-blob meanDist={meanPosFromSpawn:F2}");
+            Assert.True(meanDesiredFromSpawn > 2f,
+                $"PRIMARY: Advance Desired still piled on spawn meanDist={meanDesiredFromSpawn:F2}");
+
+            // Secondary: PreferRun mirrors / Advance never plants.
+            Assert.Equal(0, PlayerPathSim.TotalPreferRunViolations(hist));
             foreach (var tick in hist)
             {
                 foreach (var m in tick.Members)
@@ -60,13 +74,6 @@ namespace FactionTactics.Tests
                     Assert.False(m.HoldGround);
                 }
             }
-
-            // Desired leaves the spawn pile (not freeze-in-blob).
-            var late = hist[hist.Count - 1];
-            var meanDesiredFromSpawn = late.Members.Average(m =>
-                Vector3.Distance(m.DesiredPosition, spawnCentroid));
-            Assert.True(meanDesiredFromSpawn > 2f,
-                $"Advance Desired still piled on spawn (meanDist={meanDesiredFromSpawn:F2}) — PROOF claim 1");
 
             // Hold plant: Front/Leader near slot plant; PreferRun false only then.
             var holdSquad = FakeSnapshots.MakeSquad(roman, 5, "Skeleton");
@@ -83,11 +90,15 @@ namespace FactionTactics.Tests
             foreach (var m in holdSquad.Members)
             {
                 Assert.True(OrderApplicator.Intents.TryGetValue(m.InstanceId, out var intent));
-                Assert.Equal(!intent.HoldGround, intent.PreferRun);
+                Assert.Equal(!intent.HoldGround, intent.PreferRun); // secondary
                 if (intent.HoldGround)
                 {
                     anyPlant = true;
                     Assert.False(intent.PreferRun);
+                    // PRIMARY: planted ⇒ Desired dwells at body (not flee Destination).
+                    var plantDist = MotionPredicates.Dist(m.Position, intent.DesiredPosition);
+                    Assert.True(plantDist < 3.5f,
+                        $"PRIMARY: Hold plant Desired far from Position dist={plantDist:F2} id={m.InstanceId}");
                     Assert.True(
                         m.AssignedRole == SquadRole.Front || m.AssignedRole == SquadRole.Leader,
                         $"HoldGround plant must be Front/Leader, got {m.AssignedRole} for {m.InstanceId}");
@@ -132,49 +143,31 @@ namespace FactionTactics.Tests
                 })
                 .Run(32);
 
-            Assert.True(hist.Count >= 10);
+            Assert.True(hist.Count >= 16);
+
+            // PRIMARY: Azog Ambush sticky orbit (Position band + angular + path length + flaps).
+            MotionPredicates.Require(
+                MotionPredicates.AmbushStickyOrbit(
+                    hist,
+                    rLo: 3f,
+                    rHi: 24f,
+                    bandFraction: 0.70f,
+                    flapsMax: 0,
+                    phiMin: 0.6f,
+                    angVarMin: 0.05f,
+                    playerPathMin: 6f,
+                    minTicks: 16,
+                    warmup: 6),
+                "PROOF-claim-2-orbit");
+
+            // Secondary: Desired band + angular spread (legacy R3).
             var late = hist.Skip(hist.Count / 2).ToList();
             foreach (var tick in late)
             {
                 Assert.True(tick.HasSticky);
                 Assert.Equal(101L, tick.StickyId);
                 Assert.True(tick.MeanDesiredToSticky < 20f,
-                    $"orbit mean desired-to-sticky {tick.MeanDesiredToSticky:F1}m — PROOF claim 2 band");
-
-                // Angular / offset spread around sticky — not all members sharing one identical offset.
-                var angles = new List<float>();
-                foreach (var m in tick.Members)
-                {
-                    var off = m.DesiredPosition - tick.StickyPosition;
-                    off.y = 0f;
-                    if (off.sqrMagnitude < 1e-6f)
-                        continue;
-                    angles.Add(Mathf.Atan2(off.z, off.x));
-                }
-                Assert.True(angles.Count >= 3, "need ≥3 orbit Desired offsets for spread assert");
-                var meanAng = angles.Average();
-                var varAng = angles.Average(a =>
-                {
-                    var d = a - meanAng;
-                    while (d > Math.PI) d -= (float)(2 * Math.PI);
-                    while (d < -Math.PI) d += (float)(2 * Math.PI);
-                    return d * d;
-                });
-                Assert.True(varAng > 0.20f,
-                    $"orbit Desired angles collapsed (var={varAng:F3}) — slots must spread around sticky");
-                // Max pairwise angular separation on XZ (circular): must span a real arc, not a tight cone.
-                float maxPair = 0f;
-                for (int i = 0; i < angles.Count; i++)
-                {
-                    for (int j = i + 1; j < angles.Count; j++)
-                    {
-                        var d = Math.Abs(angles[i] - angles[j]);
-                        while (d > Math.PI) d = (float)(2 * Math.PI - d);
-                        if (d > maxPair) maxPair = (float)d;
-                    }
-                }
-                Assert.True(maxPair > 1.0f,
-                    $"orbit Desired pairwise angle spread too tight (maxPair={maxPair:F3} rad) — need >1.0");
+                    $"orbit mean desired-to-sticky {tick.MeanDesiredToSticky:F1}m — supporting");
             }
         }
 
@@ -207,7 +200,10 @@ namespace FactionTactics.Tests
             sim.Runtime.StickyPlayerPosition = new Vector3(20f, 0f, 0f);
 
             var brush = sim.RunStickyOnly(3, fixedCentroid: Vector3.zero);
-            Assert.Equal(0, PlayerPathSim.CountStickyFlaps(brush));
+            // PRIMARY: orbit anchor world pos stays on A during sub-second spike (not B).
+            Assert.True(brush.All(t => MotionPredicates.Dist(t.StickyPosition, new Vector3(20f, 0f, 0f)) < 1f),
+                "PRIMARY: StickyPosition must stay at A during brush (explicit dt=0.25)");
+            Assert.Equal(0, PlayerPathSim.CountStickyFlaps(brush)); // secondary id
             Assert.True(brush.All(t => t.StickyId == 101L),
                 "3 ticks @ dt=0.25 with hysteresis+ closer must not flip sticky (0.75s < 1.0 dwell)");
 
@@ -218,6 +214,9 @@ namespace FactionTactics.Tests
             var flaps = PlayerPathSim.CountStickyFlaps(combined);
             Assert.Equal(1, flaps);
             Assert.Equal(202L, combined[combined.Count - 1].StickyId);
+            Assert.True(
+                MotionPredicates.Dist(combined[combined.Count - 1].StickyPosition, new Vector3(5f, 0f, 0f)) < 1f,
+                "PRIMARY: after dwell, StickyPosition must relocate to B");
             var firstB = combined.FindIndex(t => t.StickyId == 202L);
             Assert.True(firstB >= 3,
                 $"switch must not occur during first 3 brush ticks (firstB={firstB})");
@@ -251,27 +250,22 @@ namespace FactionTactics.Tests
                 })
                 .Run(24);
 
+            // PRIMARY: Azog straggler merge (Position closes; reject frozen body + soft Desired).
+            MotionPredicates.Require(
+                MotionPredicates.StragglerMerge(
+                    hist, farId, rOut: 20f, rIn: 15f, rPack: 18f, lastK: 4, minTicks: 10),
+                "PROOF-claim-3-straggler");
+
+            // Secondary: PreferRun / Desired near centroid.
             Assert.Equal(0, PlayerPathSim.TotalPreferRunViolations(hist));
             var first = hist[0].Members.First(m => m.InstanceId == farId);
             var last = hist[hist.Count - 1].Members.First(m => m.InstanceId == farId);
             Assert.True(first.PreferRun);
             Assert.False(first.HoldGround);
-
-            // Hard: Desired near pack centroid / lattice, not soft Desired.x < 25.
             var lateCentroid = hist[hist.Count - 1].PackCentroid;
-            var desiredToCentroid = Vector3.Distance(last.DesiredPosition, lateCentroid);
+            var desiredToCentroid = MotionPredicates.Dist(last.DesiredPosition, lateCentroid);
             Assert.True(desiredToCentroid < 15f,
-                $"straggler Desired far from pack centroid dist={desiredToCentroid:F1} "
-                + $"(desired=({last.DesiredPosition.x:F1},{last.DesiredPosition.z:F1}), "
-                + $"centroid=({lateCentroid.x:F1},{lateCentroid.z:F1})) — PROOF claim 3; "
-                + "see also PackAsUnitEdgeTests.Hold_order_magnets_far_member_with_PreferRun / "
-                + "Ambush_Flank_magnets_far_member_toward_slot");
-
-            var earlyGap = Vector3.Distance(first.Position, hist[0].PackCentroid);
-            var lateGap = Vector3.Distance(last.Position, lateCentroid);
-            Assert.True(lateGap + 1f < earlyGap,
-                $"straggler did not close under step sim (early={earlyGap:F1} late={lateGap:F1}) — "
-                + "LIVE STEP: kite and watch FormUp");
+                $"supporting: straggler Desired far from centroid dist={desiredToCentroid:F1}");
         }
 
         /// <summary>
@@ -312,8 +306,24 @@ namespace FactionTactics.Tests
                         Formation = FormationType.Orb,
                         Stance = StanceType.Aggressive,
                     })
-                    .Run(20);
+                    .Run(28);
 
+                // PRIMARY: Position orbit band vs sticky while player walks (not PreferRun-only).
+                MotionPredicates.Require(
+                    MotionPredicates.AmbushStickyOrbit(
+                        hist,
+                        rLo: 2.5f,
+                        rHi: 26f,
+                        bandFraction: 0.65f,
+                        flapsMax: 0,
+                        phiMin: 0.4f,
+                        angVarMin: 0.04f,
+                        playerPathMin: 5f,
+                        minTicks: 16,
+                        warmup: 4),
+                    $"PROOF-ambush-{orderKind}-orbit");
+
+                // Secondary: PreferRun / no HoldGround plant.
                 Assert.Equal(0, PlayerPathSim.TotalPreferRunViolations(hist));
                 var late = hist.Skip(hist.Count / 3).ToList();
                 foreach (var tick in late)
@@ -322,7 +332,7 @@ namespace FactionTactics.Tests
                     {
                         Assert.Equal(!m.HoldGround, m.PreferRun);
                         Assert.True(m.PreferRun,
-                            $"{orderKind}: living member must PreferRun while Ambush moving (no HoldGround plant)");
+                            $"{orderKind}: living member must PreferRun while Ambush moving");
                         Assert.False(m.HoldGround,
                             $"{orderKind}: living member must not HoldGround-plant while Ambush moving");
                     }
@@ -330,20 +340,30 @@ namespace FactionTactics.Tests
             }
         }
 
-        /// <summary>PROOF claim 4: Roman Pin + Ambush Harass when co-engaged.</summary>
+        /// <summary>
+        /// PROOF claim 4 (Assign support). PRIMARY geometry lives in
+        /// MotionDoctrineTests.Geom_Theater_Pin_vs_Flank_lateral_halfplane_over_path.
+        /// </summary>
         [Fact]
         public void Observable_Roman_and_Ambush_theater_assigns_Pin_and_Harass_when_coengaged()
         {
+            // Multi-tick Assign (not one-shot): roles must stabilize across N steps.
             var roman = TheaterView("roman", "roman#proof", new Vector3(0f, 0f, 0f), focus: 42);
             var ambush = TheaterView("ambush", "ambush#proof", new Vector3(16f, 0f, 0f), focus: 42);
-            TheaterCommander.Assign(new[] { roman, ambush }, 0.75f);
+            for (int i = 0; i < 8; i++)
+                TheaterCommander.Assign(new[] { roman, ambush }, 0.25f);
 
-            Assert.Equal(TheaterRole.Pin, roman.State.TheaterRole);
-            Assert.Equal(TheaterRole.Harass, ambush.State.TheaterRole);
+            Assert.Equal(TheaterRole.Pin, roman.State.TheaterRole);       // secondary
+            Assert.Equal(TheaterRole.Harass, ambush.State.TheaterRole);  // secondary
             Assert.Equal(42, roman.State.TheaterFocusId);
+            Assert.True(roman.State.TheaterRoleAgeSeconds > 0f,
+                "PRIMARY-ish: Pin role must accumulate age across Assign(dt)×N (not one-shot)");
         }
 
-        /// <summary>PROOF claim 4: DeathRush stays Charge under theater while others take jobs.</summary>
+        /// <summary>
+        /// PROOF claim 4 DeathRush: ShapeOrder Charge is supporting;
+        /// PRIMARY Charge geometry is Geom_Charge_with_threat_inject_closes_not_FormUp.
+        /// </summary>
         [Fact]
         public void Observable_DeathRush_stays_Charge_while_theater_assigns_others()
         {
@@ -351,10 +371,12 @@ namespace FactionTactics.Tests
             var roman = TheaterView("roman", "rom#proof", new Vector3(10f, 0f, 0f), focus: 9);
             var ambush = TheaterView("ambush", "amb#proof", new Vector3(18f, 0f, 0f), focus: 9);
 
-            TheaterCommander.Assign(new[] { rush, roman, ambush }, 0.5f);
+            for (int i = 0; i < 8; i++)
+                TheaterCommander.Assign(new[] { rush, roman, ambush }, 0.25f);
             Assert.Equal(TheaterRole.None, rush.State.TheaterRole);
             Assert.Equal(TheaterRole.Pin, roman.State.TheaterRole);
             Assert.Equal(TheaterRole.Harass, ambush.State.TheaterRole);
+            Assert.True(roman.State.TheaterRoleAgeSeconds > 0f);
 
             var shaped = TheaterCommander.ShapeOrder(
                 new SquadSnapshot
@@ -366,7 +388,7 @@ namespace FactionTactics.Tests
                 },
                 DoctrineOrderKind.Kite);
 
-            Assert.Equal(DoctrineOrderKind.Charge, shaped);
+            Assert.Equal(DoctrineOrderKind.Charge, shaped); // secondary — geom in MotionDoctrineTests
         }
 
         private static TheaterSquadView TheaterView(string doctrineId, string stableId, Vector3 centroid, long focus)
