@@ -112,6 +112,8 @@ namespace FactionTactics.Tests.Sim
         private bool _stepMembers = true;
         private Action<PlayerPathSim, float, int>? _beforeTick;
         private Func<PlayerPathSim, float, int, SquadOrder>? _orderProvider;
+        /// <summary>When set, players returning false are omitted from the candidate list (disappear).</summary>
+        private Func<long, float, int, bool>? _playerVisible;
 
         public SquadUnit? Squad => _squad;
         public SquadRuntimeState Runtime => _runtime;
@@ -170,11 +172,25 @@ namespace FactionTactics.Tests.Sim
             return this;
         }
 
-        public List<(long id, Vector3 pos)> SamplePlayers(float time)
+        /// <summary>
+        /// Control per-tick presence. Returning false omits that player from sticky candidates
+        /// (models logout / scanner gap / teleport vanish). Keep-last sticky applies when empty.
+        /// </summary>
+        public PlayerPathSim WithPlayerVisible(Func<long, float, int, bool> visible)
+        {
+            _playerVisible = visible;
+            return this;
+        }
+
+        public List<(long id, Vector3 pos)> SamplePlayers(float time, int tickIndex = 0)
         {
             var list = new List<(long, Vector3)>(_players.Count);
             foreach (var p in _players)
+            {
+                if (_playerVisible != null && !_playerVisible(p.Id, time, tickIndex))
+                    continue;
                 list.Add((p.Id, p.Path(time)));
+            }
             return list;
         }
 
@@ -196,7 +212,7 @@ namespace FactionTactics.Tests.Sim
             {
                 _beforeTick?.Invoke(this, t, i);
 
-                var players = SamplePlayers(t);
+                var players = SamplePlayers(t, i);
                 var centroid = ComputeCentroid(_squad);
                 OrderApplicator.UpdateAmbushStickyAnchor(_runtime, centroid, players);
 
@@ -228,7 +244,7 @@ namespace FactionTactics.Tests.Sim
             for (int i = 0; i < ticks; i++)
             {
                 _beforeTick?.Invoke(this, t, i);
-                var players = SamplePlayers(t);
+                var players = SamplePlayers(t, i);
                 var centroid = fixedCentroid
                     ?? (_squad != null ? ComputeCentroid(_squad) : Vector3.zero);
                 OrderApplicator.UpdateAmbushStickyAnchor(_runtime, centroid, players);
@@ -389,6 +405,25 @@ namespace FactionTactics.Tests.Sim
                     flaps++;
             }
             return flaps;
+        }
+
+        public static float MaxPackDiameter(IReadOnlyList<TickMetrics> history)
+        {
+            float max = 0f;
+            foreach (var h in history)
+            {
+                if (h.PackDiameter > max)
+                    max = h.PackDiameter;
+            }
+            return max;
+        }
+
+        public static int TotalPreferRunViolations(IReadOnlyList<TickMetrics> history)
+        {
+            int n = 0;
+            foreach (var h in history)
+                n += h.PreferRunViolations;
+            return n;
         }
     }
 }

@@ -128,8 +128,8 @@ namespace FactionTactics.Tests
             Assert.NotEmpty(steady);
             foreach (var h in steady)
             {
-                Assert.True(h.MeanDesiredToSticky < 22f,
-                    $"tick {h.TickIndex}: mean slot→sticky {h.MeanDesiredToSticky:F2}m exceeds 22m band "
+                Assert.True(h.MeanDesiredToSticky < 20f,
+                    $"tick {h.TickIndex}: mean slot→sticky {h.MeanDesiredToSticky:F2}m exceeds 20m band "
                     + $"(stickyX={h.StickyPosition.x:F1} stickyZ={h.StickyPosition.z:F1} "
                     + $"centroidX={h.PackCentroid.x:F1} centroidZ={h.PackCentroid.z:F1}) — slots glued behind?");
             }
@@ -139,7 +139,7 @@ namespace FactionTactics.Tests
             Assert.True(late.StickyPosition.x > earlyStickyX + 30f,
                 $"player path did not advance enough lateX={late.StickyPosition.x} earlyX={earlyStickyX}");
             var meanSlotX = late.Members.Where(m => m.HasIntent).Average(m => m.DesiredPosition.x);
-            Assert.True(Math.Abs(meanSlotX - late.StickyPosition.x) < 18f,
+            Assert.True(Math.Abs(meanSlotX - late.StickyPosition.x) < 16f,
                 $"slots lagged sticky: meanSlotX={meanSlotX:F1} stickyX={late.StickyPosition.x:F1} "
                 + "(orbit stuck on old centroid)");
         }
@@ -362,7 +362,406 @@ namespace FactionTactics.Tests
                 $"sticky id drifted from {initial} under sub-hysteresis leapfrog torture");
         }
 
-        /// <summary>
+        [Fact]
+        public void Sticky_teleport_disappear_keep_last_then_reclaim_when_far()
+        {
+            // Documents keep-last (empty scanner) vs reclaim (sticky OOR / missing) invariants.
+            PluginConfig.AmbushAnchorHysteresis.Value = 10f;
+            PluginConfig.AmbushOuterPocket.Value = 18f;
+            PluginConfig.DiscoveryRadius.Value = 64f;
+            // maxRange = Max(outer*2, discovery) = 64m
+
+            var a = SimPlayer.Parametric(101, t =>
+            {
+                // Present near origin, then after vanish window reappears far (within range),
+                // then teleports beyond maxRange.
+                if (t < 2f)
+                    return new Vector3(12f, 0f, 0f);
+                if (t < 6f)
+                    return new Vector3(12f, 0f, 0f); // vanished via filter — path unused
+                if (t < 10f)
+                    return new Vector3(50f, 0f, 0f); // within 64m — refresh position, keep id
+                return new Vector3(120f, 0f, 0f); // beyond maxRange
+            });
+            var b = SimPlayer.Parametric(202, t => new Vector3(8f, 0f, 5f));
+
+            // Visibility: t in [2,6) → nobody; t in [6,10) → A only; t>=10 → A+B
+            // Before vanish seed A alone.
+            var sim = new PlayerPathSim()
+                .WithDt(0.25f)
+                .WithPlayers(a, b)
+                .WithPlayerVisible((id, t, tick) =>
+                {
+                    if (t < 2f)
+                        return id == 101L; // seed phase: A only
+                    if (t < 6f)
+                        return false; // full disappear
+                    if (t < 10f)
+                        return id == 101L; // A reappears alone far-but-in-range
+                    return true; // A beyond range + B nearby → reclaim B
+                });
+
+            var hist = sim.RunStickyOnly(56, fixedCentroid: Vector3.zero);
+            Assert.True(hist.Count >= 40);
+
+            // Phase seed: sticky A
+            var seed = hist.TakeWhile(h => h.Time < 2f).ToList();
+            Assert.NotEmpty(seed);
+            Assert.True(seed.All(h => h.HasSticky && h.StickyId == 101L),
+                "seed phase must lock sticky on A");
+
+            // Phase vanish: empty candidates → keep-last id AND last known position
+            var vanish = hist.Where(h => h.Time >= 2f && h.Time < 6f).ToList();
+            Assert.NotEmpty(vanish);
+            Assert.True(vanish.All(h => h.HasSticky && h.StickyId == 101L),
+                "INVARIANT: empty scanner must keep-last sticky id (not clear)");
+            var lastSeedPos = seed[seed.Count - 1].StickyPosition;
+            Assert.True(vanish.All(h =>
+                    Math.Abs(h.StickyPosition.x - lastSeedPos.x) < 0.05f
+                    && Math.Abs(h.StickyPosition.z - lastSeedPos.z) < 0.05f),
+                $"INVARIANT: empty scanner must keep-last sticky position "
+                + $"(expected ~({lastSeedPos.x:F1},{lastSeedPos.z:F1}), got vanish drift)");
+
+            // Phase reappear in-range: refresh position, keep id A
+            var reappear = hist.Where(h => h.Time >= 6f && h.Time < 10f).ToList();
+            Assert.NotEmpty(reappear);
+            Assert.True(reappear.All(h => h.StickyId == 101L),
+                "in-range reappear of sticky id must not reclaim a different player");
+            Assert.True(reappear.All(h => h.StickyPosition.x > 40f),
+                "sticky position must refresh to far in-range reappear (~50m)");
+
+            // Phase OOR + B present: stickyDist > maxRange → reclaim nearest (B)
+            var oor = hist.Where(h => h.Time >= 10f).ToList();
+            Assert.NotEmpty(oor);
+            Assert.True(oor.Any(h => h.StickyId == 202L),
+                "INVARIANT: sticky beyond maxRange must reclaim nearest live candidate (B)");
+            Assert.Equal(202L, oor[oor.Count - 1].StickyId);
+            Assert.True(oor[oor.Count - 1].StickyPosition.x < 15f,
+                "reclaimed sticky position must track B near origin, not A at 120m");
+        }
+
+        [Fact]
+        public void Roman_pack_rapid_player_direction_changes_PreferRun_zero_diameter_bounded()
+        {
+            PluginConfig.FormUpMagnetDistance.Value = 3.5f;
+            PluginConfig.AmbushAnchorHysteresis.Value = 10f;
+
+            var registry = DoctrinePackRegistry.CreateDefault();
+            var roman = registry.GetById("roman")!;
+            var squad = FakeSnapshots.MakeSquad(roman, 5, "Skeleton");
+            for (int i = 0; i < squad.Members.Count; i++)
+                squad.Members[i].Position = new Vector3(i * 2.5f, 0f, (i % 2) * 1.5f);
+
+            // Rapid lateral zig-zag while advancing +Z — adversarial facing churn.
+            var player = SimPlayer.Parametric(77, t =>
+            {
+                var zig = ((int)(t / 0.5f) % 2 == 0) ? 12f : -12f;
+                return new Vector3(zig, 0f, 8f + t * 5f);
+            });
+
+            var runtime = new SquadRuntimeState { RomanPhase = RomanPhase.PressContact };
+            var sim = new PlayerPathSim()
+                .WithDt(0.25f)
+                .WithSpeeds(runSpeed: 7f, walkSpeed: 3.5f)
+                .WithMemberStepping(true)
+                .WithSquad(squad, runtime)
+                .WithPlayers(player)
+                .WithOrder(new SquadOrder
+                {
+                    OrderKind = DoctrineOrderKind.Advance,
+                    Formation = FormationType.ShieldWall,
+                    Stance = StanceType.Aggressive,
+                });
+
+            var hist = sim.Run(64);
+            var violations = PlayerPathSim.TotalPreferRunViolations(hist);
+            Assert.True(violations == 0,
+                $"PreferRun != !HoldGround on {violations} member-ticks under rapid direction changes");
+
+            foreach (var h in hist)
+            {
+                foreach (var m in h.Members.Where(x => x.HasIntent))
+                {
+                    Assert.True(m.PreferRun,
+                        $"tick {h.TickIndex} member {m.InstanceId}: PreferRun false during Advance zig-zag");
+                    Assert.False(m.HoldGround,
+                        $"tick {h.TickIndex} member {m.InstanceId}: HoldGround planted during Advance zig-zag");
+                }
+            }
+
+            var d0 = hist[0].PackDiameter;
+            var dMax = PlayerPathSim.MaxPackDiameter(hist);
+            // HARD: diameter must not explode unboundedly under facing churn (≤ d0 + 12m slack,
+            // or ≤ 28m absolute for already-tight packs).
+            var bound = Math.Max(28f, d0 + 12f);
+            Assert.True(dMax <= bound + 0.01f,
+                $"INVARIANT GAP: pack diameter exploded under rapid player zig-zag "
+                + $"(d0={d0:F1} dMax={dMax:F1} bound={bound:F1}) — facing/FormUp cohesion breach");
+        }
+
+        [Fact]
+        public void Ambush_Flank_Kite_oscillation_circle_orbit_band_and_PreferRun()
+        {
+            PluginConfig.AmbushAnchorHysteresis.Value = 10f;
+            PluginConfig.FormUpMagnetDistance.Value = 3.5f;
+            PluginConfig.AmbushOuterPocket.Value = 18f;
+            PluginConfig.AmbushInnerBand.Value = 8f;
+
+            var registry = DoctrinePackRegistry.CreateDefault();
+            var ambush = registry.GetById("ambush")!;
+            var squad = FakeSnapshots.MakeSquad(ambush, 5, "Greydwarf");
+            for (int i = 0; i < squad.Members.Count; i++)
+            {
+                var ang = i * (Math.PI * 2.0 / 5.0);
+                squad.Members[i].Position = new Vector3(
+                    14f * (float)Math.Cos(ang), 0f, 14f * (float)Math.Sin(ang));
+            }
+
+            // Player walks a circle; packs orbit sticky.
+            var player = SimPlayer.Parametric(88, t =>
+            {
+                var ang = t * 0.55f;
+                return new Vector3(20f * (float)Math.Cos(ang), 0f, 20f * (float)Math.Sin(ang));
+            });
+
+            var runtime = new SquadRuntimeState();
+            var sim = new PlayerPathSim()
+                .WithDt(0.25f)
+                .WithSpeeds(runSpeed: 8f, walkSpeed: 4f)
+                .WithMemberStepping(true)
+                .WithSquad(squad, runtime)
+                .WithPlayers(player)
+                .WithOrderProvider((s, t, tick) =>
+                {
+                    // Oscillate Flank ↔ Kite every 4 ticks (adversarial order churn).
+                    var kite = (tick / 4) % 2 == 1;
+                    return new SquadOrder
+                    {
+                        OrderKind = kite ? DoctrineOrderKind.Kite : DoctrineOrderKind.Flank,
+                        Formation = kite ? FormationType.Skirmish : FormationType.Orb,
+                        Stance = StanceType.Aggressive,
+                    };
+                });
+
+            var hist = sim.Run(80);
+            Assert.True(hist.All(h => h.HasSticky && h.StickyId == 88L),
+                "single circling player must keep sticky id under Flank/Kite oscillation");
+
+            var flankTicks = hist.Count(h => h.OrderKind == DoctrineOrderKind.Flank);
+            var kiteTicks = hist.Count(h => h.OrderKind == DoctrineOrderKind.Kite);
+            Assert.True(flankTicks >= 10 && kiteTicks >= 10,
+                $"oscillation too weak: Flank={flankTicks} Kite={kiteTicks}");
+
+            var violations = PlayerPathSim.TotalPreferRunViolations(hist);
+            Assert.True(violations == 0,
+                $"PreferRun violations={violations} under Flank/Kite oscillation (must be 0)");
+
+            // Skip settle ticks; orbit band around sticky must hold through order flips.
+            var steady = hist.Skip(8).ToList();
+            foreach (var h in steady)
+            {
+                Assert.True(h.MeanDesiredToSticky < 24f,
+                    $"tick {h.TickIndex} order={h.OrderKind}: mean slot→sticky "
+                    + $"{h.MeanDesiredToSticky:F2}m exceeds 24m orbit band under Flank/Kite flip");
+            }
+
+            // PreferRun true whenever not HoldGround (already covered by violations), plus
+            // Kite ticks must not plant the whole pack.
+            var kiteHoldFraction = steady
+                .Where(h => h.OrderKind == DoctrineOrderKind.Kite)
+                .SelectMany(h => h.Members.Where(m => m.HasIntent))
+                .DefaultIfEmpty()
+                .Average(m => m.HasIntent && m.HoldGround ? 1.0 : 0.0);
+            Assert.True(kiteHoldFraction < 0.75,
+                $"INVARIANT GAP: Kite oscillation planted HoldGround on {kiteHoldFraction:P0} of intents "
+                + "(orbit froze instead of skirmish)");
+        }
+
+        [Fact]
+        public void Two_Ambush_packs_independent_sticky_leapfrog_flaps_zero()
+        {
+            PluginConfig.AmbushAnchorHysteresis.Value = 10f;
+            const float hysteresis = 10f;
+
+            // Pack A near origin, pack B far east — each has its own runtime sticky.
+            var centroidA = new Vector3(0f, 0f, 0f);
+            var centroidB = new Vector3(80f, 0f, 0f);
+
+            // One shared moving player path both packs see, plus leapfrog pair for flap torture.
+            var mover = SimPlayer.Parametric(900, t =>
+                new Vector3(40f + t * 2f, 0f, 0f)); // crosses between packs
+
+            // Sub-hysteresis leapfrog near A (delta 0.5m << 10m hysteresis).
+            var leapA1 = SimPlayer.Parametric(501, t =>
+            {
+                var tick = (int)Math.Round(t / 0.25f);
+                var dist = (tick % 2 == 0) ? 10.0f : 10.5f;
+                return new Vector3(dist, 0f, 0f);
+            });
+            var leapA2 = SimPlayer.Parametric(502, t =>
+            {
+                var tick = (int)Math.Round(t / 0.25f);
+                var dist = (tick % 2 == 0) ? 10.5f : 10.0f;
+                return new Vector3(0f, 0f, dist);
+            });
+            // Sub-hysteresis leapfrog near B.
+            var leapB1 = SimPlayer.Parametric(601, t =>
+            {
+                var tick = (int)Math.Round(t / 0.25f);
+                var dist = (tick % 2 == 0) ? 10.0f : 10.5f;
+                return centroidB + new Vector3(dist, 0f, 0f);
+            });
+            var leapB2 = SimPlayer.Parametric(602, t =>
+            {
+                var tick = (int)Math.Round(t / 0.25f);
+                var dist = (tick % 2 == 0) ? 10.5f : 10.0f;
+                return centroidB + new Vector3(0f, 0f, dist);
+            });
+
+            // --- Phase 1: one moving player, two packs — independent sticky acquisition ---
+            var runtimeA = new SquadRuntimeState();
+            var runtimeB = new SquadRuntimeState();
+            var simMover = new PlayerPathSim()
+                .WithDt(0.5f)
+                .WithPlayers(mover);
+
+            // Drive both runtimes from the same samples (independent UpdateAmbushStickyAnchor).
+            var histA = new List<TickMetrics>();
+            var histB = new List<TickMetrics>();
+            float t = 0f;
+            for (int i = 0; i < 40; i++)
+            {
+                var players = simMover.SamplePlayers(t, i);
+                OrderApplicator.UpdateAmbushStickyAnchor(runtimeA, centroidA, players);
+                OrderApplicator.UpdateAmbushStickyAnchor(runtimeB, centroidB, players);
+                histA.Add(new TickMetrics
+                {
+                    TickIndex = i,
+                    Time = t,
+                    HasSticky = runtimeA.HasStickyPlayer,
+                    StickyId = runtimeA.StickyPlayerId,
+                    StickyPosition = runtimeA.StickyPlayerPosition,
+                    PackCentroid = centroidA,
+                });
+                histB.Add(new TickMetrics
+                {
+                    TickIndex = i,
+                    Time = t,
+                    HasSticky = runtimeB.HasStickyPlayer,
+                    StickyId = runtimeB.StickyPlayerId,
+                    StickyPosition = runtimeB.StickyPlayerPosition,
+                    PackCentroid = centroidB,
+                });
+                t += 0.5f;
+            }
+
+            Assert.True(histA.All(h => h.HasSticky && h.StickyId == 900L),
+                "pack A must independently sticky-lock the sole mover");
+            Assert.True(histB.All(h => h.HasSticky && h.StickyId == 900L),
+                "pack B must independently sticky-lock the sole mover (separate runtime)");
+            // Positions must track the same player but are independent state objects.
+            Assert.True(histA[histA.Count - 1].StickyPosition.x > 40f);
+            Assert.True(Math.Abs(
+                    histA[histA.Count - 1].StickyPosition.x
+                    - histB[histB.Count - 1].StickyPosition.x) < 0.05f,
+                "both packs refresh sticky position from the same mover");
+
+            // --- Phase 2: leapfrog flap torture per pack (independent) ---
+            var simA = new PlayerPathSim()
+                .WithDt(0.25f)
+                .WithPlayers(leapA1, leapA2);
+            var histLeapA = simA.RunStickyOnly(80, fixedCentroid: centroidA);
+            var flapsA = PlayerPathSim.CountStickyFlaps(histLeapA);
+            Assert.True(flapsA == 0,
+                $"pack A leapfrog (<{hysteresis}m) caused {flapsA} sticky flaps — must be 0");
+
+            var simB = new PlayerPathSim()
+                .WithDt(0.25f)
+                .WithPlayers(leapB1, leapB2);
+            var histLeapB = simB.RunStickyOnly(80, fixedCentroid: centroidB);
+            var flapsB = PlayerPathSim.CountStickyFlaps(histLeapB);
+            Assert.True(flapsB == 0,
+                $"pack B leapfrog (<{hysteresis}m) caused {flapsB} sticky flaps — must be 0");
+
+            // Independence: pack A sticky id is from {501,502}, pack B from {601,602}.
+            var idA = histLeapA[0].StickyId;
+            var idB = histLeapB[0].StickyId;
+            Assert.True(idA == 501L || idA == 502L, $"pack A unexpected sticky {idA}");
+            Assert.True(idB == 601L || idB == 602L, $"pack B unexpected sticky {idB}");
+            Assert.True(histLeapA.All(h => h.StickyId == idA));
+            Assert.True(histLeapB.All(h => h.StickyId == idB));
+        }
+
+        [Fact]
+        public void Magnet_race_far_straggler_vs_sprinting_player_Desired_lattice_PreferRun()
+        {
+            PluginConfig.FormUpMagnetDistance.Value = 3.5f;
+            PluginConfig.AmbushAnchorHysteresis.Value = 10f;
+
+            var registry = DoctrinePackRegistry.CreateDefault();
+            var roman = registry.GetById("roman")!;
+            var squad = FakeSnapshots.MakeSquad(roman, 5, "Skeleton");
+            // Tight lattice near origin; one member far behind.
+            for (int i = 0; i < 4; i++)
+                squad.Members[i].Position = new Vector3(i * 2f, 0f, 0f);
+            squad.Members[4].Position = new Vector3(-40f, 0f, 0f);
+            var farId = squad.Members[4].InstanceId;
+
+            // Player sprints away +Z — pack must chase while magnet snaps straggler to lattice.
+            var player = SimPlayer.Parametric(3, t => new Vector3(4f, 0f, 5f + t * 9f));
+
+            var runtime = new SquadRuntimeState { RomanPhase = RomanPhase.PressContact };
+            var sim = new PlayerPathSim()
+                .WithDt(0.25f)
+                .WithSpeeds(runSpeed: 8f, walkSpeed: 3.5f)
+                .WithMemberStepping(true)
+                .WithSquad(squad, runtime)
+                .WithPlayers(player)
+                .WithOrder(new SquadOrder
+                {
+                    OrderKind = DoctrineOrderKind.Advance,
+                    Formation = FormationType.ShieldWall,
+                    Stance = StanceType.Aggressive,
+                });
+
+            var hist = sim.Run(48);
+            var violations = PlayerPathSim.TotalPreferRunViolations(hist);
+            Assert.True(violations == 0,
+                $"PreferRun violations={violations} during magnet race (must be 0)");
+
+            // Every tick: far member PreferRun true and DesiredPosition lattice-side
+            // (near pack centroid / formation, not chasing player solo past the wall).
+            foreach (var h in hist)
+            {
+                var far = h.Members.First(m => m.InstanceId == farId);
+                Assert.True(far.HasIntent, $"tick {h.TickIndex}: far member missing intent");
+                Assert.True(far.PreferRun,
+                    $"tick {h.TickIndex}: far member PreferRun false during magnet race");
+                Assert.False(far.HoldGround,
+                    $"tick {h.TickIndex}: far member HoldGround planted during magnet race");
+
+                var desiredToCentroid = Vector3.Distance(far.DesiredPosition, h.PackCentroid);
+                // Magnet rule: when distToSlot > FormUpMagnetDistance, DesiredPosition = slot.
+                // Slot stays near formation origin (centroid±anchor). HARD: Desired within 18m of centroid.
+                Assert.True(desiredToCentroid < 18f,
+                    $"tick {h.TickIndex}: INVARIANT GAP magnet race — far Desired "
+                    + $"{desiredToCentroid:F1}m from centroid (expected lattice-side <18m); "
+                    + $"desired=({far.DesiredPosition.x:F1},{far.DesiredPosition.z:F1}) "
+                    + $"centroid=({h.PackCentroid.x:F1},{h.PackCentroid.z:F1}) "
+                    + $"playerZ={h.StickyPosition.z:F1}");
+            }
+
+            // Late: far member should have closed distance toward the pack (stepping toward magnet slot).
+            var earlyFar = hist[0].Members.First(m => m.InstanceId == farId);
+            var lateFar = hist[hist.Count - 1].Members.First(m => m.InstanceId == farId);
+            var earlyGap = Vector3.Distance(earlyFar.Position, hist[0].PackCentroid);
+            var lateGap = Vector3.Distance(lateFar.Position, hist[hist.Count - 1].PackCentroid);
+            Assert.True(lateGap + 1f < earlyGap,
+                $"far straggler did not close on pack (earlyGap={earlyGap:F1} lateGap={lateGap:F1}) "
+                + "— magnet Desired not translating into chase");
+        }
+
+                /// <summary>
         /// Hard regression: a single-tick hysteresis+ spike must not permanently steal sticky
         /// without dwell. Current 1.0.8 switches instantly — this documents the gap.
         /// Do NOT weaken; either add dwell to UpdateAmbushStickyAnchor or leave failing-first.
