@@ -241,7 +241,7 @@ namespace FactionTactics.Orders
                 }
                 else if (order.OrderKind == DoctrineOrderKind.Charge && !keepRange)
                 {
-                    var threat = TryGetThreatPosition(member, centroid);
+                    var threat = ResolveMemberThreatPosition(squad, member, centroid);
                     if (threat.HasValue)
                         desired = threat.Value;
                 }
@@ -259,7 +259,7 @@ namespace FactionTactics.Orders
                     && !roman
                     && !viking)
                 {
-                    var threat = TryGetThreatPosition(member, centroid);
+                    var threat = ResolveMemberThreatPosition(squad, member, centroid);
                     if (threat.HasValue)
                         desired = threat.Value;
                 }
@@ -621,6 +621,8 @@ namespace FactionTactics.Orders
         /// </summary>
         private static Vector3? TryGetSquadThreatPosition(SquadUnit squad, Vector3 centroid)
         {
+            if (squad.DebugThreatPosition.HasValue)
+                return squad.DebugThreatPosition;
             foreach (var member in squad.Members)
             {
                 if (!member.IsAlive)
@@ -630,6 +632,14 @@ namespace FactionTactics.Orders
                     return t;
             }
             return null;
+        }
+
+        /// <summary>Per-member Charge/FocusFire point: DebugThreatPosition override, else live scan.</summary>
+        private static Vector3? ResolveMemberThreatPosition(SquadUnit squad, SquadMemberView member, Vector3 centroid)
+        {
+            if (squad.DebugThreatPosition.HasValue)
+                return squad.DebugThreatPosition;
+            return TryGetThreatPosition(member, centroid);
         }
 
         /// <summary>

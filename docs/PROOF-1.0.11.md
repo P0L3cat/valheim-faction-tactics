@@ -66,7 +66,7 @@ If a claim cannot be proven offline, the matching test either asserts the math t
 | 4 | Theater Pin/Flank/Harass — skeletons hold front (Pin), greys kite/orbit (Harass/Flank); Deathrush always charges | `Observable_Roman_and_Ambush_theater_assigns_Pin_and_Harass_when_coengaged` + `Observable_DeathRush_stays_Charge_while_theater_assigns_others` + siblings `Solo_pack_and_split_focus_get_no_role`, `Outside_coengage_radius_does_not_join`, `Hysteresis_holds_pin_against_a_closer_arrival_until_dwell`, `TwoRomans_closer_pins_farther_flanks` | Mixed spawn: line in front, greys off-axis/orbit, greylings bee-line | `spawn skeleton 8` + `spawn greydwarf 8` (+ optional greyling); `ft status` theater counts |
 | 5 | Sticky dwell — run past another player for &lt;1s shouldn’t re-anchor Ambush | `Observable_sticky_ignores_subsecond_hysteresis_spike` + `Sticky_requires_sustained_hysteresis_breach_not_single_spike` (explicit dt=0.25; interrupted dwell; mid-dwell candidate reset) | Orbit stays on original sticky through sub-second spike | Two players; brief pass; sticky id / orbit focus unchanged |
 
-**Azog R1 + R2 closed** on `ft-narvi-proof` (harden-only: Observable Facts + sibling PackAsUnit/Version108/109/Theater/sticky tests; no production doctrine changes).
+**Azog R1 + R2 + R3 residual closeout** on `ft-narvi-proof` (harden-only: Observable Facts + sibling PackAsUnit/Version108/109/Theater/sticky tests; tiny `SquadUnit.DebugThreatPosition` test hook only — no production doctrine changes).
 
 Defaults that gate live feel: `AmbushAnchorHysteresis=10`, `AmbushStickySwitchDwellSeconds=1.0`, `FormUpMagnetDistance=3.5`, `TheaterRoleDwellSeconds=2.5`, `TheaterCoEngageRadius=48`.
 
@@ -413,3 +413,26 @@ Any Assert message that names a **live Proof step** is an intentional “cannot 
 | Offline entry | `tests/FactionTactics.Tests/InGameObservableContractTests.cs` |
 | Sim harness | `tests/FactionTactics.Tests/Sim/PlayerPathSim.cs` |
 | Live knobs | `AmbushAnchorHysteresis`, `AmbushStickySwitchDwellSeconds`, `FormUpMagnetDistance`, `TheaterRoleDwellSeconds`, `TheaterCoEngageRadius` |
+
+---
+
+## 9. Residual after R3 / known for 1.0.12
+
+Azog R3 holes folded into offline Facts on this branch (no Azog re-call). Closed here:
+
+| Hole | Closeout |
+|------|----------|
+| `Charge_is_excluded_from_FormUp_magnet` asserted Position only | Inject `SquadUnit.DebugThreatPosition` far threat; assert Desired near threat / far from formation core |
+| `Zero_magnet_distance_leaves_far_member_unsnapped` asserted Position only | FocusFire + far DebugThreat with FormUpMagnetDistance=0; assert Desired stays on threat (not snapped to slot/core) |
+| `Ambush_sticky_player_hysteresis_prevents_flap` mixed null/explicit dt | Explicit dt on every `UpdateAmbushStickyAnchor`; pin `TickIntervalSeconds=0.75`; Fact that null-dt one-breach does not steal when tick &lt; dwell |
+| Observable Ambush orbit angular variance soft | Threshold raised (`varAng > 0.20`) + max pairwise Desired angle spread `&gt; 1.0` rad |
+| Merge reattach intents-only | After merge: PreferRun true + Desired near parent centroid for absorbed members |
+| Observable PreferRun Advance-only | Ambush Flank/Kite Fact: PreferRun true, HoldGround false for living intents while moving |
+
+**Known residual for 1.0.12 (not fixed in production this closeout):**
+
+1. **Null-dt sticky dwell vs TickInterval.** `UpdateAmbushStickyAnchor(deltaTime: null)` uses `TickIntervalSeconds` (default 0.75). If an operator raises `TickIntervalSeconds` to equal `AmbushStickySwitchDwellSeconds` (1.0), a **single** null-dt hysteresis breach completes dwell in one call and steals sticky. Live Apply path uses TickInterval; offline tests pin 0.75 and pass explicit dt. 1.0.12 should either clamp dwell accumulation to `&lt; TickInterval` for a single tick, or document that TickInterval must stay strictly below sticky dwell.
+2. **`DebugThreatPosition` is offline/sim only.** No live Valheim combat-target injection; Charge/FocusFire threat chase still depends on VALHEIM_REFS scans in-game.
+3. **No plate / Thunderstore.** This branch does not ship DLLs; Thunderstore 1.0.11 remains poisoned relative to git tip (see §0).
+4. **Live-only gaps unchanged** (§2): pixels/animation, client vs dedicated ownership, prefab→doctrine routing, terrain/navmesh, multiplayer clock.
+

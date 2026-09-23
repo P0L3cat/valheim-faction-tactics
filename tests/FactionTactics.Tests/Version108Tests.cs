@@ -169,15 +169,20 @@ namespace FactionTactics.Tests
         [Fact]
         public void Ambush_sticky_player_hysteresis_prevents_flap()
         {
+            // Pin TickIntervalSeconds below dwell so null-dt never equals a full dwell tick.
+            // Sims always pass explicit dt (see also Ambush_sticky_null_dt_one_breach_does_not_steal_when_tick_below_dwell).
+            PluginConfig.TickIntervalSeconds.Value = 0.75f;
             PluginConfig.AmbushAnchorHysteresis.Value = 10f;
+            PluginConfig.AmbushStickySwitchDwellSeconds.Value = 1.0f;
             var state = new SquadRuntimeState();
             var centroid = Vector3.zero;
+            const float dt = 0.5f;
 
             OrderApplicator.UpdateAmbushStickyAnchor(state, centroid, new List<(long, Vector3)>
             {
                 (101, new Vector3(10f, 0f, 0f)),
                 (202, new Vector3(12f, 0f, 0f)),
-            });
+            }, dt);
             Assert.True(state.HasStickyPlayer);
             Assert.Equal(101, state.StickyPlayerId);
 
@@ -186,21 +191,52 @@ namespace FactionTactics.Tests
             {
                 (101, new Vector3(10f, 0f, 0f)),
                 (303, new Vector3(7f, 0f, 0f)),
-            });
+            }, dt);
             Assert.Equal(101, state.StickyPlayerId);
 
             // 15m closer — still sticky until AmbushStickySwitchDwellSeconds elapses.
-            PluginConfig.AmbushStickySwitchDwellSeconds.Value = 1.0f;
             var closer = new List<(long, Vector3)>
             {
                 (101, new Vector3(20f, 0f, 0f)),
                 (404, new Vector3(5f, 0f, 0f)),
             };
-            OrderApplicator.UpdateAmbushStickyAnchor(state, centroid, closer, 0.5f);
+            OrderApplicator.UpdateAmbushStickyAnchor(state, centroid, closer, dt);
             Assert.Equal(101, state.StickyPlayerId);
             // Second half-second completes 1.0s dwell → switch.
-            OrderApplicator.UpdateAmbushStickyAnchor(state, centroid, closer, 0.5f);
+            OrderApplicator.UpdateAmbushStickyAnchor(state, centroid, closer, dt);
             Assert.Equal(404, state.StickyPlayerId);
+        }
+
+        /// <summary>
+        /// Document+pin: null deltaTime uses TickIntervalSeconds. With TickInterval=0.75 and dwell=1.0,
+        /// one hysteresis-breach tick must NOT steal sticky. If TickInterval were raised to equal dwell,
+        /// a single null-dt breach would complete dwell in one call (known residual for 1.0.12 —
+        /// tests always pass explicit dt; live Apply path uses TickInterval).
+        /// </summary>
+        [Fact]
+        public void Ambush_sticky_null_dt_one_breach_does_not_steal_when_tick_below_dwell()
+        {
+            PluginConfig.TickIntervalSeconds.Value = 0.75f;
+            PluginConfig.AmbushAnchorHysteresis.Value = 10f;
+            PluginConfig.AmbushStickySwitchDwellSeconds.Value = 1.0f;
+            var state = new SquadRuntimeState();
+            var centroid = Vector3.zero;
+
+            OrderApplicator.UpdateAmbushStickyAnchor(state, centroid, new List<(long, Vector3)>
+            {
+                (101, new Vector3(20f, 0f, 0f)),
+            }, 0.25f);
+            Assert.Equal(101L, state.StickyPlayerId);
+
+            // Null dt → TickIntervalSeconds=0.75 < dwell=1.0 → one breach must not steal.
+            OrderApplicator.UpdateAmbushStickyAnchor(state, centroid, new List<(long, Vector3)>
+            {
+                (101, new Vector3(20f, 0f, 0f)),
+                (202, new Vector3(5f, 0f, 0f)),
+            }); // intentional null dt
+            Assert.Equal(101L, state.StickyPlayerId);
+            Assert.Equal(202L, state.StickySwitchCandidateId);
+            Assert.True(state.StickySwitchCandidateSeconds < 1.0f - 1e-3f);
         }
 
         

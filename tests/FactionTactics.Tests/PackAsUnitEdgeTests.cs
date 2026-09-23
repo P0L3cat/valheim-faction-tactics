@@ -84,20 +84,22 @@ namespace FactionTactics.Tests
         [Fact]
         public void Zero_magnet_distance_leaves_far_member_unsnapped()
         {
+            // FocusFire + far DebugThreat: without magnet Desired stays on threat; magnet>0 would snap to slot.
             PluginConfig.FormUpMagnetDistance.Value = 0f;
             var registry = DoctrinePackRegistry.CreateDefault();
-            var roman = registry.GetById("roman")!;
-            var squad = FakeSnapshots.MakeSquad(roman, 4, "Skeleton");
+            var rush = registry.GetById("death-rush")!;
+            var squad = FakeSnapshots.MakeSquad(rush, 4, "Greyling");
             squad.Members[3].Position = new Vector3(40f, 0f, 0f);
+            var farThreat = new Vector3(90f, 0f, 0f);
+            squad.DebugThreatPosition = farThreat;
 
-            var runtime = new SquadRuntimeState { RomanPhase = RomanPhase.PressContact };
             OrderApplicator.Intents.Clear();
             new OrderApplicator().Apply(squad, new SquadOrder
             {
-                OrderKind = DoctrineOrderKind.Advance,
-                Formation = FormationType.ShieldWall,
+                OrderKind = DoctrineOrderKind.FocusFire,
+                Formation = FormationType.Wedge,
                 Stance = StanceType.Aggressive,
-            }, runtime);
+            }, new SquadRuntimeState());
 
             Assert.True(OrderApplicator.Intents.TryGetValue(squad.Members[3].InstanceId, out var intent));
             Assert.Equal(!intent.HoldGround, intent.PreferRun);
@@ -115,8 +117,14 @@ namespace FactionTactics.Tests
             var bodyToCore = Vector3.Distance(squad.Members[3].Position, core);
             Assert.True(bodyToCore > 20f,
                 $"magnet=0 far member body still near core? dist={bodyToCore:F1}");
-            // Desired may still be the formation slot (normal Advance path) — magnet override is what is off.
-            // Contrast with FormUp_magnet_snaps_*: magnet>0 forces PreferRun + slot while far.
+            // Desired also unsnapped: stays on injected threat, not formation slot/core.
+            var desiredToThreat = Vector3.Distance(intent.DesiredPosition, farThreat);
+            var desiredToCore = Vector3.Distance(intent.DesiredPosition, core);
+            Assert.True(desiredToThreat < 5f,
+                $"magnet=0 Desired should stay on threat dist={desiredToThreat:F1} "
+                + $"desired=({intent.DesiredPosition.x:F1},{intent.DesiredPosition.z:F1})");
+            Assert.True(desiredToCore > 20f,
+                $"magnet=0 Desired must not snap to slot/core dist={desiredToCore:F1}");
         }
 
         [Fact]
@@ -153,8 +161,15 @@ namespace FactionTactics.Tests
             var ids = active.Members.Select(m => m.InstanceId).ToList();
             Assert.Equal(ids.Count, ids.Distinct().Count());
 
-            Assert.True(OrderApplicator.Intents.ContainsKey(dropout.Members[0].InstanceId),
+            Assert.True(OrderApplicator.Intents.TryGetValue(dropout.Members[0].InstanceId, out var absorbed),
                 "dropout inside merge radius must reattach and receive intents same tick");
+            Assert.True(absorbed.PreferRun, "absorbed member must PreferRun after merge reattach");
+            Assert.False(absorbed.HoldGround);
+            var parentCentroid = SquadDirector.ComputeSquadCentroid(active);
+            var desiredToParent = Vector3.Distance(absorbed.DesiredPosition, parentCentroid);
+            Assert.True(desiredToParent < 20f,
+                $"absorbed Desired not near parent centroid dist={desiredToParent:F1} "
+                + $"desired=({absorbed.DesiredPosition.x:F1},{absorbed.DesiredPosition.z:F1})");
         }
 
         [Fact]
@@ -247,6 +262,7 @@ namespace FactionTactics.Tests
 
         /// <summary>
         /// Charge is excluded from formUpOrder — FormUp magnet must not override Charge Desired to slot.
+        /// Inject far DebugThreat so Desired would differ from slot; assert Desired near threat / far from core.
         /// </summary>
         [Fact]
         public void Charge_is_excluded_from_FormUp_magnet()
@@ -257,6 +273,8 @@ namespace FactionTactics.Tests
             var squad = FakeSnapshots.MakeSquad(rush, 4, "Greyling");
             squad.Members[3].Position = new Vector3(40f, 0f, 0f);
             var farId = squad.Members[3].InstanceId;
+            var farThreat = new Vector3(95f, 0f, 0f);
+            squad.DebugThreatPosition = farThreat;
 
             OrderApplicator.Intents.Clear();
             new OrderApplicator().Apply(squad, new SquadOrder
@@ -268,7 +286,7 @@ namespace FactionTactics.Tests
 
             Assert.True(OrderApplicator.Intents.TryGetValue(farId, out var intent));
             Assert.Equal(!intent.HoldGround, intent.PreferRun);
-            // Magnet must not force Desired onto the tight pack core the way Advance FormUp does.
+            Assert.True(squad.Members[3].Position.x > 35f);
             var core = Vector3.zero;
             int cn = 0;
             for (int i = 0; i < 3; i++)
@@ -277,9 +295,15 @@ namespace FactionTactics.Tests
                 cn++;
             }
             core /= cn;
-            // Document exclusion: with Charge, far member Desired is not required to magnet-snap;
-            // PreferRun still mirrors !HoldGround. Contrast FormUp_magnet_snaps_far_member_to_slot_with_PreferRun.
-            Assert.True(squad.Members[3].Position.x > 35f);
+            // Charge must chase threat, not FormUp-magnet onto pack slot/core.
+            var desiredToThreat = Vector3.Distance(intent.DesiredPosition, farThreat);
+            var desiredToCore = Vector3.Distance(intent.DesiredPosition, core);
+            Assert.True(desiredToThreat < 5f,
+                $"Charge Desired not near injected threat dist={desiredToThreat:F1} "
+                + $"desired=({intent.DesiredPosition.x:F1},{intent.DesiredPosition.z:F1})");
+            Assert.True(desiredToCore > 20f,
+                $"Charge Desired magnet-snapped to core? dist={desiredToCore:F1} "
+                + "(contrast FormUp_magnet_snaps_far_member_to_slot_with_PreferRun)");
         }
 
         [Fact]

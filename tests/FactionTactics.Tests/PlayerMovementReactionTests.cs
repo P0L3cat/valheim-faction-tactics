@@ -35,7 +35,7 @@ namespace FactionTactics.Tests
             OrderApplicator.UpdateAmbushStickyAnchor(state, Vector3.zero, new List<(long, Vector3)>
             {
                 (101, new Vector3(12f, 0f, 0f)),
-            });
+            }, 0.25f);
             Assert.Equal(101L, state.StickyPlayerId);
 
             var a = SimPlayer.Parametric(101, t =>

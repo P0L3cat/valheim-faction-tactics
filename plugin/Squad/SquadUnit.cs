@@ -37,6 +37,12 @@ namespace FactionTactics.Squad
         public float? DebugNearestThreatDistance { get; set; }
 
         /// <summary>
+        /// Offline/sim hook: when set, OrderApplicator Charge/FocusFire / facing use this
+        /// world position instead of VALHEIM_REFS combat-target / player scans.
+        /// </summary>
+        public Vector3? DebugThreatPosition { get; set; }
+
+        /// <summary>
         /// Offline/sim hook: player id Theater Commander groups on.
         /// Unset means "no scripted focus" (live play scans the world).
         /// </summary>

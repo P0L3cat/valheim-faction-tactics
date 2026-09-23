@@ -160,8 +160,21 @@ namespace FactionTactics.Tests
                     while (d < -Math.PI) d += (float)(2 * Math.PI);
                     return d * d;
                 });
-                Assert.True(varAng > 0.05f,
+                Assert.True(varAng > 0.20f,
                     $"orbit Desired angles collapsed (var={varAng:F3}) — slots must spread around sticky");
+                // Max pairwise angular separation on XZ (circular): must span a real arc, not a tight cone.
+                float maxPair = 0f;
+                for (int i = 0; i < angles.Count; i++)
+                {
+                    for (int j = i + 1; j < angles.Count; j++)
+                    {
+                        var d = Math.Abs(angles[i] - angles[j]);
+                        while (d > Math.PI) d = (float)(2 * Math.PI - d);
+                        if (d > maxPair) maxPair = (float)d;
+                    }
+                }
+                Assert.True(maxPair > 1.0f,
+                    $"orbit Desired pairwise angle spread too tight (maxPair={maxPair:F3} rad) — need >1.0");
             }
         }
 
@@ -259,6 +272,62 @@ namespace FactionTactics.Tests
             Assert.True(lateGap + 1f < earlyGap,
                 $"straggler did not close under step sim (early={earlyGap:F1} late={lateGap:F1}) — "
                 + "LIVE STEP: kite and watch FormUp");
+        }
+
+        /// <summary>
+        /// PROOF claim 1 (Ambush): Flank/Kite living members PreferRun and never HoldGround-plant while moving.
+        /// </summary>
+        [Fact]
+        public void Observable_Ambush_Flank_and_Kite_PreferRun_no_HoldGround_plant_while_moving()
+        {
+            PluginConfig.FormUpMagnetDistance.Value = 3.5f;
+            PluginConfig.AmbushAnchorHysteresis.Value = 10f;
+            PluginConfig.AmbushStickySwitchDwellSeconds.Value = 1.0f;
+
+            var registry = DoctrinePackRegistry.CreateDefault();
+            var ambush = registry.GetById("ambush")!;
+
+            foreach (var orderKind in new[] { DoctrineOrderKind.Flank, DoctrineOrderKind.Kite })
+            {
+                var squad = FakeSnapshots.MakeSquad(ambush, 5, "Greydwarf");
+                for (int i = 0; i < squad.Members.Count; i++)
+                    squad.Members[i].Position = new Vector3(6f + i * 0.5f, 0f, 2f);
+
+                var player = SimPlayer.Waypoints(101, new[]
+                {
+                    new Vector3(0f, 0f, 0f),
+                    new Vector3(18f, 0f, 0f),
+                    new Vector3(18f, 0f, 18f),
+                }, 2.0f);
+
+                var hist = new PlayerPathSim()
+                    .WithDt(0.25f)
+                    .WithMemberStepping(true)
+                    .WithSpeeds(7f, 3.5f)
+                    .WithPlayers(player)
+                    .WithSquad(squad)
+                    .WithOrder(new SquadOrder
+                    {
+                        OrderKind = orderKind,
+                        Formation = FormationType.Orb,
+                        Stance = StanceType.Aggressive,
+                    })
+                    .Run(20);
+
+                Assert.Equal(0, PlayerPathSim.TotalPreferRunViolations(hist));
+                var late = hist.Skip(hist.Count / 3).ToList();
+                foreach (var tick in late)
+                {
+                    foreach (var m in tick.Members.Where(x => x.HasIntent))
+                    {
+                        Assert.Equal(!m.HoldGround, m.PreferRun);
+                        Assert.True(m.PreferRun,
+                            $"{orderKind}: living member must PreferRun while Ambush moving (no HoldGround plant)");
+                        Assert.False(m.HoldGround,
+                            $"{orderKind}: living member must not HoldGround-plant while Ambush moving");
+                    }
+                }
+            }
         }
 
         /// <summary>PROOF claim 4: Roman Pin + Ambush Harass when co-engaged.</summary>
