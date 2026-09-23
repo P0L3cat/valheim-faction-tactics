@@ -1,10 +1,12 @@
 using System.Collections.Generic;
+using System.Linq;
 using FactionTactics.Commander;
 using FactionTactics.Config;
 using FactionTactics.Doctrine;
 using FactionTactics.Orders;
 using FactionTactics.Siege;
 using FactionTactics.Squad;
+using FactionTactics.Tests.Sim;
 using UnityEngine;
 using Xunit;
 
@@ -17,23 +19,46 @@ namespace FactionTactics.Tests
         [Fact]
         public void PreferRun_true_when_not_holding()
         {
+            PluginConfig.FormUpMagnetDistance.Value = 3.5f;
             var registry = DoctrinePackRegistry.CreateDefault();
             var roman = registry.GetById("roman")!;
             var squad = FakeSnapshots.MakeSquad(roman, 4, "Skeleton");
-            var runtime = new SquadRuntimeState { RomanPhase = RomanPhase.ApproachStandoff };
-            OrderApplicator.Intents.Clear();
-            new OrderApplicator().Apply(squad, new SquadOrder
-            {
-                OrderKind = DoctrineOrderKind.Advance,
-                Formation = FormationType.ShieldWall,
-                Stance = StanceType.Aggressive,
-            }, runtime);
+            for (int i = 0; i < squad.Members.Count; i++)
+                squad.Members[i].Position = new Vector3(0.15f * i, 0f, 0.05f * i);
+            var spawnCentroid = PlayerPathSim.ComputeCentroid(squad);
 
-            Assert.NotEmpty(OrderApplicator.Intents);
-            foreach (var intent in OrderApplicator.Intents.Values)
+            var player = SimPlayer.Parametric(3, t => new Vector3(10f + t * 3f, 0f, 0f));
+            var hist = new PlayerPathSim()
+                .WithDt(0.25f)
+                .WithSpeeds(8f, 3.5f)
+                .WithMemberStepping(true)
+                .WithPlayers(player)
+                .WithSquad(squad, new SquadRuntimeState { RomanPhase = RomanPhase.ApproachStandoff })
+                .WithOrder(new SquadOrder
+                {
+                    OrderKind = DoctrineOrderKind.Advance,
+                    Formation = FormationType.ShieldWall,
+                    Stance = StanceType.Aggressive,
+                })
+                .Run(12);
+
+            var late = hist[hist.Count - 1];
+            var meanPos = late.Members.Average(m => MotionPredicates.Dist(m.Position, spawnCentroid));
+            var meanDesired = late.Members.Average(m => MotionPredicates.Dist(m.DesiredPosition, spawnCentroid));
+            Assert.True(meanPos > 1.5f,
+                $"PRIMARY: Advance Positions freeze-in-blob meanDist={meanPos:F2}");
+            Assert.True(meanDesired > 2f,
+                $"PRIMARY: Advance Desired freeze-in-blob meanDist={meanDesired:F2}");
+
+            // Secondary flags
+            Assert.Equal(0, PlayerPathSim.TotalPreferRunViolations(hist));
+            foreach (var tick in hist)
             {
-                Assert.False(intent.HoldGround);
-                Assert.True(intent.PreferRun);
+                foreach (var m in tick.Members)
+                {
+                    Assert.True(m.PreferRun);
+                    Assert.False(m.HoldGround);
+                }
             }
         }
 
@@ -88,16 +113,28 @@ namespace FactionTactics.Tests
             OrderApplicator.Intents.Clear();
             director.Tick(0.75f);
 
-            // Direct merge helper: stragglers fold into parent roster.
-            var merged = SquadDirector.MergeStragglers(new[] { small, large });
-            Assert.Single(merged);
-            Assert.True(merged[0].Members.Count >= 6);
-
+            // Tick already merged once — assert ActiveSquads only (no second MergeStragglers absorb).
             Assert.Single(director.ActiveSquads);
-            Assert.NotNull(director.ActiveSquads[0].CurrentOrder);
+            var active = director.ActiveSquads[0];
+            Assert.True(active.Members.Count >= 6);
+            var ids = active.Members.Select(m => m.InstanceId).ToList();
+            Assert.Equal(ids.Count, ids.Distinct().Count());
+            Assert.NotNull(active.CurrentOrder);
             foreach (var m in small.Members)
                 Assert.True(OrderApplicator.Intents.ContainsKey(m.InstanceId),
                     $"missing intent for merged straggler {m.InstanceId}");
+
+            // Fresh copies: MergeStragglers helper alone also folds once with unique ids.
+            var large2 = FakeSnapshots.MakeSquad(roman, 4, "Skeleton");
+            large2.SquadId = "roman-large2";
+            var small2 = FakeSnapshots.MakeSquad(roman, 2, "Skeleton");
+            small2.SquadId = "roman-straggler2";
+            for (int i = 0; i < small2.Members.Count; i++)
+                small2.Members[i].Position = new Vector3(20f + i, 0f, 0f);
+            var merged = SquadDirector.MergeStragglers(new[] { small2, large2 });
+            Assert.Single(merged);
+            var mid = merged[0].Members.Select(m => m.InstanceId).ToList();
+            Assert.Equal(mid.Count, mid.Distinct().Count());
         }
 
         [Fact]
@@ -137,15 +174,20 @@ namespace FactionTactics.Tests
         [Fact]
         public void Ambush_sticky_player_hysteresis_prevents_flap()
         {
+            // Pin TickIntervalSeconds below dwell so null-dt never equals a full dwell tick.
+            // Sims always pass explicit dt (see also Ambush_sticky_null_dt_one_breach_does_not_steal_when_tick_below_dwell).
+            PluginConfig.TickIntervalSeconds.Value = 0.75f;
             PluginConfig.AmbushAnchorHysteresis.Value = 10f;
+            PluginConfig.AmbushStickySwitchDwellSeconds.Value = 1.0f;
             var state = new SquadRuntimeState();
             var centroid = Vector3.zero;
+            const float dt = 0.5f;
 
             OrderApplicator.UpdateAmbushStickyAnchor(state, centroid, new List<(long, Vector3)>
             {
                 (101, new Vector3(10f, 0f, 0f)),
                 (202, new Vector3(12f, 0f, 0f)),
-            });
+            }, dt);
             Assert.True(state.HasStickyPlayer);
             Assert.Equal(101, state.StickyPlayerId);
 
@@ -154,21 +196,52 @@ namespace FactionTactics.Tests
             {
                 (101, new Vector3(10f, 0f, 0f)),
                 (303, new Vector3(7f, 0f, 0f)),
-            });
+            }, dt);
             Assert.Equal(101, state.StickyPlayerId);
 
             // 15m closer — still sticky until AmbushStickySwitchDwellSeconds elapses.
-            PluginConfig.AmbushStickySwitchDwellSeconds.Value = 1.0f;
             var closer = new List<(long, Vector3)>
             {
                 (101, new Vector3(20f, 0f, 0f)),
                 (404, new Vector3(5f, 0f, 0f)),
             };
-            OrderApplicator.UpdateAmbushStickyAnchor(state, centroid, closer, 0.5f);
+            OrderApplicator.UpdateAmbushStickyAnchor(state, centroid, closer, dt);
             Assert.Equal(101, state.StickyPlayerId);
             // Second half-second completes 1.0s dwell → switch.
-            OrderApplicator.UpdateAmbushStickyAnchor(state, centroid, closer, 0.5f);
+            OrderApplicator.UpdateAmbushStickyAnchor(state, centroid, closer, dt);
             Assert.Equal(404, state.StickyPlayerId);
+        }
+
+        /// <summary>
+        /// Document+pin: null deltaTime uses TickIntervalSeconds. With TickInterval=0.75 and dwell=1.0,
+        /// one hysteresis-breach tick must NOT steal sticky. If TickInterval were raised to equal dwell,
+        /// a single null-dt breach would complete dwell in one call (known residual for 1.0.12 —
+        /// tests always pass explicit dt; live Apply path uses TickInterval).
+        /// </summary>
+        [Fact]
+        public void Ambush_sticky_null_dt_one_breach_does_not_steal_when_tick_below_dwell()
+        {
+            PluginConfig.TickIntervalSeconds.Value = 0.75f;
+            PluginConfig.AmbushAnchorHysteresis.Value = 10f;
+            PluginConfig.AmbushStickySwitchDwellSeconds.Value = 1.0f;
+            var state = new SquadRuntimeState();
+            var centroid = Vector3.zero;
+
+            OrderApplicator.UpdateAmbushStickyAnchor(state, centroid, new List<(long, Vector3)>
+            {
+                (101, new Vector3(20f, 0f, 0f)),
+            }, 0.25f);
+            Assert.Equal(101L, state.StickyPlayerId);
+
+            // Null dt → TickIntervalSeconds=0.75 < dwell=1.0 → one breach must not steal.
+            OrderApplicator.UpdateAmbushStickyAnchor(state, centroid, new List<(long, Vector3)>
+            {
+                (101, new Vector3(20f, 0f, 0f)),
+                (202, new Vector3(5f, 0f, 0f)),
+            }); // intentional null dt
+            Assert.Equal(101L, state.StickyPlayerId);
+            Assert.Equal(202L, state.StickySwitchCandidateId);
+            Assert.True(state.StickySwitchCandidateSeconds < 1.0f - 1e-3f);
         }
 
         
