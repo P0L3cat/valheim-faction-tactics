@@ -454,10 +454,12 @@ Harness fail Facts RED on: angVar-only orbit; magnet=0 fake zero-mag; PackCentro
 | R3 ZeroMagnet | Roman/soft FormUp attract toward P from magnet edge — NOT Ambush Orb ~11m hold; OFF Dist(M,P) non-decreasing + Desired not toward P / Dist(D,P) non-collapsing; optional ON peak Dist(D,P) drop then OFF recover. Harness RED: flat Orb hold / magnet0 chase |
 | R1 Ambush \|Δφ\| | Pack-mean φ OR median per-member **after warmup only** (no all-members×full-hist fan-in); sustained in-band \|Δφ\| rate; freeze-after-fan-in RED. Dwell: `StickyDwellFromOrbitHist` + TickIntervalSeconds vs sim dt Fact |
 | R4 Merge absorb | After motion close, `MergeStragglers` on SAME squad graph / absorb id as the Ms that closed in hist (motion close alone ≠ absorb) |
-| R5 FormUp seed | Capacity-index slot (`SlotIndex`) or `Dist(slotS, FixedLatticeSlotFromPack(...))≤e` — not `Dist(slotS, coreC)<14` |
+| R5 FormUp seed | `Dist(slotS, FixedLatticeSlotFromPack(...))≤6` using Apply's facing — no SlotIndex-only OR; not `Dist(slotS, coreC)<14` |
 | R6 Flee speed | PARKED — leave alone |
 
-Harness fail Facts RED (added): `HarnessFail_freeze_after_fan_in_orbit_must_RED`; `HarnessFail_theater_plant_PinFlank_same_side_freeze_must_RED`; Orb-flat / magnet0 zero-mag.
+**Azog S1–S3 closeout (this tip):** S1 now requires the FormUp seed to be within 6m of the fixed lattice helper (no SlotIndex-only OR); S2 requires Harass `R_lo≥8m` and rear `along≤0` with Pin `|Δφ|≤0.25`; S3 requires `|Δφ|` motion on at least 4 in-band transitions, so one fat turn cannot mint `π/2`. S4, S5, and R6 remain PARKED.
+
+Harness fail Facts RED (added): `HarnessFail_freeze_after_fan_in_orbit_must_RED`; `HarnessFail_single_fat_delta_phi_orbit_must_RED`; `HarnessFail_theater_plant_PinFlank_same_side_freeze_must_RED`; Orb-flat / magnet0 zero-mag.
 
 **Narvi geometric closeout (this branch):** Azog adversarial predicates implemented as PRIMARY offline wins in `MotionPredicates` / `MotionDoctrineTests`; soft flag-only Observable claims demoted to secondary. No production doctrine change; no plate.
 

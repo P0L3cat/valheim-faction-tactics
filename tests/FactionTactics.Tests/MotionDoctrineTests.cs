@@ -320,16 +320,14 @@ namespace FactionTactics.Tests
             var coreC = Vector3.zero;
             foreach (var c in core) coreC += c;
             coreC /= core.Count;
-            var facing = new Vector3(1f, 0f, 0f);
+            // Apply's no-threat fallback facing is world +Z.
+            var facing = new Vector3(0f, 0f, 1f);
             var latticeS = MotionPredicates.FixedLatticeSlotFromPack(
                 core, slotIndex: seedIntent.SlotIndex, capacity: capacity, forward: facing, spacing: 2.2f);
             var seedErr = MotionPredicates.Dist(slotS, latticeS);
-            // Prefer lattice agreement; capacity-index alone is the allowed alternate when facing basis differs.
-            Assert.True(seedErr <= 6f || seedIntent.SlotIndex < capacity,
-                $"FormUp seed neither lattice≤6 (got {seedErr:F1}) nor capacity-index");
-            // Reject the old soft sole gate: Dist(slotS, coreC)<14 without index/lattice.
-            Assert.False(seedErr > 20f && seedIntent.SlotIndex < 0,
-                "FormUp seed must not rely on Dist(slotS, coreC)<14 alone");
+            // S1: the seed must actually match the fixed lattice slot; SlotIndex alone is not geometry.
+            Assert.True(seedErr <= 6f,
+                $"FormUp seed must match FixedLatticeSlotFromPack within 6m (got {seedErr:F1})");
 
             var player = SimPlayer.Parametric(1, _ => new Vector3(80f, 0f, 0f));
             var hist = new PlayerPathSim()
@@ -522,21 +520,26 @@ namespace FactionTactics.Tests
                 "Assign(dt)×N support: role age must accumulate");
             Assert.NotEqual(TheaterRole.None, pinView.State.TheaterRole);
 
-            var pinSquad = FakeSnapshots.MakeSquad(roman, 4, "Skeleton");
+            // Keep Pin as a one-member anchor so the [4,14] band measures the actual pin axis.
+            var pinSquad = FakeSnapshots.MakeSquad(roman, 1, "Skeleton");
             // Flank/Harass use Ambush sticky origin so Desired tracks P + Theater lateral (roman centroid freeze soft-pass).
             var flankSquad = FakeSnapshots.MakeSquad(ambush, 4, "Greydwarf");
-            var harassSquad = FakeSnapshots.MakeSquad(ambush, 4, "Greydwarf");
+            // Keep Harass as a one-member skirmish pocket: its Wedge center is exactly 8m
+            // off the sticky and on the rear boundary, so the R_lo/rear gates are literal.
+            var harassSquad = FakeSnapshots.MakeSquad(ambush, 1, "Greydwarf");
             // Player walks +X. right = Cross(up,+X)=(0,0,-1).
             // Pin on +Z (lat<0), Flank on −Z (lat>0) — opposite half-planes. Harass rear (−X) outer.
             var player = SimPlayer.Parametric(42, t => new Vector3(4f + t * 1.5f, 0f, 0f));
             for (int i = 0; i < 4; i++)
             {
                 // Start near standoff line ahead of player (+Z front) so keep-distance Desired stays in band.
-                pinSquad.Members[i].Position = new Vector3(8f + (i - 1.5f) * 1.0f, 0f, 12f);
+                if (i < pinSquad.Members.Count)
+                    pinSquad.Members[i].Position = new Vector3(8f, 0f, 12f);
                 // Ambush Flank pocket: sticky + right*12 ≈ (P.x, 0, -12) when facing +X.
                 flankSquad.Members[i].Position = new Vector3(4f + (i - 1.5f) * 1.0f, 0f, -12f);
                 // Harass rear/outer: behind (−X) + HarassLateral −8 → pocket on +Z when facing +X.
-                harassSquad.Members[i].Position = new Vector3(-2f + (i - 1.5f) * 1.0f, 0f, 10f);
+                if (i < harassSquad.Members.Count)
+                    harassSquad.Members[i].Position = new Vector3(-2f, 0f, 10f);
             }
             var pinIds = pinSquad.Members.Select(m => m.InstanceId).ToList();
             var flankIds = flankSquad.Members.Select(m => m.InstanceId).ToList();
@@ -569,7 +572,7 @@ namespace FactionTactics.Tests
             var kiteOrder = new SquadOrder
             {
                 OrderKind = DoctrineOrderKind.Kite,
-                Formation = FormationType.ShieldWall,
+                Formation = FormationType.Wedge,
                 Stance = StanceType.Aggressive,
             };
 
@@ -611,13 +614,13 @@ namespace FactionTactics.Tests
                     flankIds,
                     harassIds,
                     focusAt: h => h.PlayerPositions.Count > 0 ? h.PlayerPositions[0].pos : h.StickyPosition,
-                    pinRLo: 3f,
-                    pinRHi: 22f, // roman standoff line ~20
+                    pinRLo: 4f,
+                    pinRHi: 14f, // S2: hard Pin band [4,14].
                     flankRLo: 6f,
                     flankRHi: 28f,
-                    harassRLo: 1.5f, // Skirmish inner slot can sit ~2m from sticky after HarassLateral
+                    harassRLo: 8f, // S2: Harass must hold an outer/rear band, not an inner sticky slot.
                     bandFraction: 0.80f,
-                    pinPhiMax: 0.40f,
+                    pinPhiMax: 0.25f,
                     playerPathMin: 10f,
                     minTicks: 16,
                     warmup: 24,
@@ -696,6 +699,40 @@ namespace FactionTactics.Tests
                 phiMin: MotionPredicates.PiOverTwo, angVarAndMin: null,
                 playerPathMin: 6f, minTicks: 16, warmup: 10);
             Assert.NotNull(err);
+        }
+
+        [Fact]
+        public void HarnessFail_single_fat_delta_phi_orbit_must_RED()
+        {
+            // S3: three large in-band turns can sum to π/2, but motion is not spread over ≥4 ticks.
+            var hist = new List<TickMetrics>();
+            for (int t = 0; t < 24; t++)
+            {
+                var sticky = new Vector3(t * 0.8f, 0f, 0f);
+                var m = new TickMetrics
+                {
+                    TickIndex = t,
+                    Time = t * 0.25f,
+                    HasSticky = true,
+                    StickyId = 1,
+                    StickyPosition = sticky,
+                };
+                m.PlayerPositions.Add((1, sticky));
+                var angle = t < 8 ? 0f : Mathf.Min(1.65f, (t - 7) * 0.55f);
+                for (int i = 0; i < 4; i++)
+                {
+                    var pos = sticky + new Vector3(Mathf.Cos(angle) * 11f, 0f, Mathf.Sin(angle) * 11f);
+                    m.Members.Add(new MemberTickMetric(300 + i, pos, pos, true, false, true));
+                }
+                hist.Add(m);
+            }
+
+            var err = MotionPredicates.AmbushStickyOrbit(
+                hist, rLo: 8f, rHi: 14f, bandFraction: 0.80f, flapsMax: 0,
+                phiMin: MotionPredicates.PiOverTwo, angVarAndMin: null,
+                playerPathMin: 6f, minTicks: 16, warmup: 2);
+            Assert.NotNull(err);
+            Assert.Contains("need ≥4", err);
         }
 
         [Fact]

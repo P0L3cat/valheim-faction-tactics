@@ -450,14 +450,12 @@ namespace FactionTactics.Tests.Sim
                 return $"orbit: |Δφ| after warmup packMeanSum={packSum:F3} medianMember={medianMember:F3} < {phiMin} "
                     + "(fan-in stacking removed; freeze-after-fan-in must fail)";
 
-            // Sustained: in-band window must exist; |Δφ| rate not identically zero after warmup
-            // (freeze-after-fan-in fails phiMin; corner-orbit may concentrate Δφ on few ticks).
+            // Sustained: in-band window must exist and motion must be spread across ≥4
+            // in-band transitions; one fat Δφ must never mint the whole orbit claim.
             if (bandTicks < 4)
                 return $"orbit: sustained band ticks={bandTicks} < 4";
-            if (packPhiN > 0 && bandTicksWithMotion < 2 && phiClaim >= phiMin * 0.5f)
-                return $"orbit: sustained |Δφ| rate only {bandTicksWithMotion}/{bandTicks} in-band ticks (freeze-after-fan-in)";
-            if (bandTicksWithMotion < 1)
-                return $"orbit: sustained |Δφ| rate 0/{bandTicks} in-band ticks (freeze-after-fan-in)";
+            if (bandTicksWithMotion < 4)
+                return $"orbit: |Δφ| motion only {bandTicksWithMotion}/{bandTicks} in-band ticks (need ≥4; no single-fat-Δφ mint)";
 
             float varAng = 0f;
             if (angles.Count >= 3)
@@ -918,6 +916,8 @@ namespace FactionTactics.Tests.Sim
                 return "theater: pinIds empty";
             if (flankIds == null || flankIds.Count == 0)
                 return "theater: flankIds empty";
+            if (harassIds != null && harassIds.Count > 0 && harassRLo < 8f)
+                return $"theater: harness fail — Harass R_lo={harassRLo:F1} must be ≥8m";
 
             // R2: ≥2 roles present in SAME hist.
             int roles = 1; // pin
@@ -1074,9 +1074,8 @@ namespace FactionTactics.Tests.Sim
                         if (off.sqrMagnitude < 1f) continue;
                         rearN++;
                         var along = Vector3.Dot(off, fwd);   // rear = negative
-                        var lat = Math.Abs(Vector3.Dot(off, right));
-                        // Rear/outer quarter: behind heading OR outer lateral with Dist≥harassRLo.
-                        if (along <= 0f || (lat >= harassRLo * 0.6f && Dist(SamplePos(m), f1) >= harassRLo))
+                        // S2: Harass is rear by heading, not a weak lateral OR escape.
+                        if (along <= 0f)
                             rearOk++;
                     }
                 }
@@ -1101,7 +1100,7 @@ namespace FactionTactics.Tests.Sim
             float pinRHi = 12f,
             float flankRLo = 8f,
             float flankRHi = 22f,
-            float harassRLo = 14f,
+            float harassRLo = 8f,
             float bandFraction = 0.80f,
             float pinPhiMax = 0.25f,
             float playerPathMin = 10f,
