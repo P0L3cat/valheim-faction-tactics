@@ -81,6 +81,22 @@ namespace FactionTactics.Squad
 
         /// <summary>Seconds the current StickySwitchCandidateId has been continuously closer by hysteresis.</summary>
         public float StickySwitchCandidateSeconds { get; set; }
+
+        // --- 1.0.11 Theater Commander (cross-pack jobs around one player) ---
+        /// <summary>Pin / Flank / Harass while this pack shares a player with another pack. None if solo or Death-Rush.</summary>
+        public TheaterRole TheaterRole { get; set; }
+
+        /// <summary>Seconds on <see cref="TheaterRole"/>. Resets when the job or focus player changes.</summary>
+        public float TheaterRoleAgeSeconds { get; set; }
+
+        /// <summary>Player id this pack is coordinating around. 0 when <see cref="HasTheaterFocus"/> is false.</summary>
+        public long TheaterFocusId { get; set; }
+
+        /// <summary>Last focus position used for co-engage distance and lateral bias.</summary>
+        public Vector3 TheaterFocusPosition { get; set; }
+
+        /// <summary>True when <see cref="TheaterFocusId"/> was resolved this engagement.</summary>
+        public bool HasTheaterFocus { get; set; }
     }
 
     /// <summary>Builds stable squad keys and matches clusters across ticks by member-id overlap.</summary>

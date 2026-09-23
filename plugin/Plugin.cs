@@ -25,7 +25,7 @@ namespace FactionTactics
     {
         public const string PluginGuid = "com.nate.factiontactics";
         public const string PluginName = "FactionTactics";
-        public const string PluginVersion = "1.0.10";
+        public const string PluginVersion = "1.0.11";
 
         internal static Plugin Instance { get; private set; } = null!;
         internal static ManualLogSource Log { get; private set; } = null!;
@@ -81,7 +81,7 @@ namespace FactionTactics
             {
                 _harmony = new Harmony(PluginGuid);
                 MonsterAIPatches.Apply(_harmony);
-                Log.LogInfo($"{PluginName} {PluginVersion} loaded (1.0.10 Ambush sticky dwell + Narvi tests; Pack-as-Unit intact). Tick={PluginConfig.TickIntervalSeconds.Value}s");
+                Log.LogInfo($"{PluginName} {PluginVersion} loaded (1.0.11 Theater Commander: Pin/Flank/Harass across packs; Death-Rush stays Charge). Tick={PluginConfig.TickIntervalSeconds.Value}s");
             }
             else
             {

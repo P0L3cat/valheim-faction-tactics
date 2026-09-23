@@ -77,6 +77,8 @@ namespace FactionTactics.Config
         public static ConfigEntry<float> FormationCasualtyReshuffle { get; private set; } = null!;
         public static ConfigEntry<float> ChargeMaxSeconds { get; private set; } = null!;
         public static ConfigEntry<float> OrderMinDwellSeconds { get; private set; } = null!;
+        public static ConfigEntry<float> TheaterCoEngageRadius { get; private set; } = null!;
+        public static ConfigEntry<float> TheaterRoleDwellSeconds { get; private set; } = null!;
         public static ConfigEntry<float> OrderScoreHysteresis { get; private set; } = null!;
         public static ConfigEntry<float> RomanWallOuter { get; private set; } = null!;
         public static ConfigEntry<float> RomanWallInner { get; private set; } = null!;
@@ -467,6 +469,18 @@ namespace FactionTactics.Config
                 1.25f,
                 "Phase B: minimum seconds on an order before a change. Bypassed on threat lost, broken, Ambush Charge→Kite, or a Roman/Viking cadence timer expiry.");
 
+            TheaterCoEngageRadius = config.Bind(
+                "Combat",
+                "TheaterCoEngageRadius",
+                48f,
+                "1.0.11 Theater: packs whose centroid is within this many meters of the same player share Pin/Flank/Harass. Default 48.");
+
+            TheaterRoleDwellSeconds = config.Bind(
+                "Combat",
+                "TheaterRoleDwellSeconds",
+                2.5f,
+                "1.0.11 Theater: seconds a Pin/Flank/Harass job sticks before it can change. Death-Rush is never assigned. Default 2.5.");
+
             OrderScoreHysteresis = config.Bind(
                 "Combat",
                 "OrderScoreHysteresis",
@@ -599,7 +613,7 @@ namespace FactionTactics.Config
                 AmbushAmbienceMessageCooldownSeconds, AmbushAmbiencePlayerRange, AmbushAmbienceMinSquadSize,
                 HoldAttackCooldown, HoldAttackRangeFactor, SwingStaggerMs,
                 FormationReshuffleSeconds, FormationCasualtyReshuffle, ChargeMaxSeconds,
-                OrderMinDwellSeconds, OrderScoreHysteresis, RomanWallOuter, RomanWallInner,
+                OrderMinDwellSeconds, TheaterCoEngageRadius, TheaterRoleDwellSeconds, OrderScoreHysteresis, RomanWallOuter, RomanWallInner,
                 RomanStandoffDistance, RomanStandoffHoldMin, RomanStandoffHoldMax,
                 RomanContactSwingRange, RomanRetreatPauseSeconds,
                 VikingStandoffDistance, VikingIndoorsStandoff, VikingStandoffHoldMin, VikingStandoffHoldMax,

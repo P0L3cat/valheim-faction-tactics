@@ -105,6 +105,7 @@ namespace FactionTactics.Squad
 
             yield return $"squads: discovered={_lastDiscoveredCount} active={_active.Count} runtime={_runtime.Count}";
             yield return $"orders: [{summary}]";
+            yield return $"theater: {FormatTheaterCounts()}";
 
             long zdoWrites = 0, schemaWrites = 0, zdoReads = 0, zdoStale = 0, schemaMismatch = 0, ownerDrives = 0, rpcIntentsSent = 0, rpcPeerInvokes = 0, rpcBatchesSent = 0;
 #if VALHEIM_REFS
@@ -155,6 +156,7 @@ namespace FactionTactics.Squad
             _lastDiscoveredCount = discovered.Count;
             var seen = new HashSet<SquadRuntimeState>();
 
+            var commanding = new List<CommandingSquad>();
             foreach (var squad in discovered)
             {
                 var state = MatchOrCreateRuntime(squad);
@@ -191,18 +193,32 @@ namespace FactionTactics.Squad
                     {
                         Plugin.Log?.LogInfo(
                             $"Squad {squad.SquadId} below minSize alive={alive} roster={roster} min={minSize} doctrine={doctrineId}");
+                        ClearTheaterRole(state);
                         continue;
                     }
                     Plugin.Log?.LogInfo(
                         $"Squad {squad.SquadId} remnant keep-alive alive={alive} peak={state.PeakAlive} min={minSize} doctrine={doctrineId}");
                 }
 
+                commanding.Add(new CommandingSquad(squad, state, alive));
+            }
+
+            AssignTheaterRoles(commanding, dt);
+
+            foreach (var work in commanding)
+            {
+                var squad = work.Squad;
+                var state = work.State;
+                var alive = work.Alive;
+                var doctrineId = squad.Doctrine?.Id ?? "?";
+
                 RefineRolesWithScorer(squad);
-                var threats = AssessThreats(squad, state, minSize);
+                var threats = AssessThreats(squad, state, EffectiveMinSize(squad.Doctrine?.Id));
                 squad.LastCasualtyRatio = threats.CasualtyRatio;
                 squad.LastIsBroken = threats.IsBroken;
 
                 var snapshot = SquadSnapshot.FromSquad(squad, threats);
+                snapshot.TheaterRole = state.TheaterRole;
                 BandedCadence.ReadInto(snapshot, state);
 
                 var order = _commander.Propose(snapshot);
@@ -242,8 +258,9 @@ namespace FactionTactics.Squad
                     var assaultTag = snapshot.AssaultActive
                         ? (snapshot.PlayersNearAssault ? " Assault/hot" : " Assault/quiet")
                         : "";
+                    var theaterTag = state.TheaterRole == TheaterRole.None ? "" : $" theater={state.TheaterRole}";
                     Plugin.Log?.LogInfo(
-                        $"[{squad.Doctrine.DisplayName}]{assaultTag} {squad.SquadId} n={alive} peak={state.PeakAlive} cas={threats.CasualtyRatio:0.00} → {order.OrderKind} ({order.Formation}/{order.Stance})");
+                        $"[{squad.Doctrine?.DisplayName ?? doctrineId}]{assaultTag} {squad.SquadId} n={alive} peak={state.PeakAlive} cas={threats.CasualtyRatio:0.00} → {order.OrderKind} ({order.Formation}/{order.Stance}){theaterTag}");
                 }
             }
 
@@ -261,6 +278,202 @@ namespace FactionTactics.Squad
             catch (System.Exception ex) { Plugin.Log?.LogDebug($"IntentRpcSync.FlushBroadcast: {ex.GetType().Name}: {ex.Message}"); }
 #endif
             MaybeLogHeartbeat(dt);
+        }
+
+        private readonly struct CommandingSquad
+        {
+            public CommandingSquad(SquadUnit squad, SquadRuntimeState state, int alive)
+            {
+                Squad = squad;
+                State = state;
+                Alive = alive;
+            }
+
+            public SquadUnit Squad { get; }
+            public SquadRuntimeState State { get; }
+            public int Alive { get; }
+        }
+
+        private static void ClearTheaterRole(SquadRuntimeState state)
+        {
+            state.TheaterRole = TheaterRole.None;
+            state.TheaterRoleAgeSeconds = 0f;
+            state.HasTheaterFocus = false;
+            state.TheaterFocusId = 0;
+        }
+
+        private string FormatTheaterCounts()
+        {
+            var pin = 0;
+            var flank = 0;
+            var harass = 0;
+            for (int i = 0; i < _runtime.Count; i++)
+            {
+                switch (_runtime[i].TheaterRole)
+                {
+                    case TheaterRole.Pin:
+                        pin++;
+                        break;
+                    case TheaterRole.Flank:
+                        flank++;
+                        break;
+                    case TheaterRole.Harass:
+                        harass++;
+                        break;
+                }
+            }
+
+            return $"pin={pin} flank={flank} harass={harass}";
+        }
+
+        /// <summary>
+        /// Group commanding packs on one player before orders are proposed.
+        /// Unit tests leave <see cref="Plugin.Instance"/> null and pass
+        /// <see cref="SquadUnit.DebugFocusPlayerId"/> instead of scanning the world.
+        /// </summary>
+        private static void AssignTheaterRoles(List<CommandingSquad> commanding, float dt)
+        {
+            List<(long id, Vector3 pos)>? world = null;
+            if (Plugin.Instance != null)
+                world = SampleWorldPlayers();
+
+            var radius = TheaterCommander.CoEngageRadius();
+            var views = new List<TheaterSquadView>(commanding.Count);
+            for (int i = 0; i < commanding.Count; i++)
+            {
+                var work = commanding[i];
+                var centroid = LivingCentroid(work.Squad);
+                var view = new TheaterSquadView
+                {
+                    State = work.State,
+                    DoctrineId = work.Squad.Doctrine?.Id ?? "",
+                    StableId = work.State.StableId ?? "",
+                    Centroid = centroid,
+                };
+                if (TryResolveTheaterFocus(work.Squad, work.State, centroid, radius, world, out var id, out var pos))
+                {
+                    view.HasFocus = true;
+                    view.FocusPlayerId = id;
+                    view.FocusPosition = pos;
+                }
+
+                views.Add(view);
+            }
+
+            TheaterCommander.Assign(views, dt);
+        }
+
+        private static bool TryResolveTheaterFocus(
+            SquadUnit squad,
+            SquadRuntimeState state,
+            Vector3 centroid,
+            float radius,
+            List<(long id, Vector3 pos)>? world,
+            out long id,
+            out Vector3 pos)
+        {
+            if (squad.DebugFocusPlayerId.HasValue)
+            {
+                id = squad.DebugFocusPlayerId.Value;
+                pos = squad.DebugFocusPlayerPosition ?? centroid;
+                return true;
+            }
+
+            if (world != null && world.Count > 0)
+            {
+                var best = float.MaxValue;
+                var bestId = 0L;
+                var bestPos = Vector3.zero;
+                var found = false;
+                for (int i = 0; i < world.Count; i++)
+                {
+                    var d = Vector3.Distance(centroid, world[i].pos);
+                    if (d < best)
+                    {
+                        best = d;
+                        bestId = world[i].id;
+                        bestPos = world[i].pos;
+                        found = true;
+                    }
+                }
+
+                if (found && best <= radius)
+                {
+                    id = bestId;
+                    pos = bestPos;
+                    return true;
+                }
+
+                id = 0;
+                pos = Vector3.zero;
+                return false;
+            }
+
+            if (state.HasStickyPlayer && state.StickyPlayerId != 0)
+            {
+                id = state.StickyPlayerId;
+                pos = state.StickyPlayerPosition;
+                return true;
+            }
+
+            id = 0;
+            pos = Vector3.zero;
+            return false;
+        }
+
+        private static List<(long id, Vector3 pos)> SampleWorldPlayers()
+        {
+            var list = new List<(long id, Vector3 pos)>();
+#if VALHEIM_REFS
+            try
+            {
+                var players = ValheimWorldScan.CollectPlayers();
+                if (players == null)
+                    return list;
+                for (int i = 0; i < players.Count; i++)
+                {
+                    var player = players[i];
+                    if (player == null)
+                        continue;
+                    long id = 0;
+                    try { id = player.GetPlayerID(); }
+                    catch { id = 0; }
+                    if (id == 0)
+                    {
+                        try { id = player.GetInstanceID(); }
+                        catch { continue; }
+                    }
+
+                    Vector3 pos;
+                    try { pos = player.transform.position; }
+                    catch { continue; }
+                    list.Add((id, pos));
+                }
+            }
+            catch
+            {
+                // No players, or the scan is unavailable in this host.
+            }
+#endif
+            return list;
+        }
+
+        private static Vector3 LivingCentroid(SquadUnit squad)
+        {
+            var sum = Vector3.zero;
+            var n = 0;
+            for (int i = 0; i < squad.Members.Count; i++)
+            {
+                var member = squad.Members[i];
+                if (!member.IsAlive)
+                    continue;
+                sum += member.Position;
+                n++;
+            }
+
+            if (n == 0)
+                return Vector3.zero;
+            return new Vector3(sum.x / n, sum.y / n, sum.z / n);
         }
 
         private void MaybeLogHeartbeat(float dt)

@@ -306,6 +306,7 @@ namespace FactionTactics.Tests
             ForcedHoldSeconds = s.ForcedHoldSeconds,
             ActiveStandoffDistance = s.ActiveStandoffDistance,
             ActiveSwingRange = s.ActiveSwingRange,
+            TheaterRole = s.TheaterRole,
         };
 
         private static (float advance, float charge) Ranges(string doctrineId) => doctrineId switch

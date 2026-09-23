@@ -48,7 +48,11 @@ namespace FactionTactics.Commander
             else
             {
                 kind = pack.SelectOrder(snapshot, previous);
+                kind = TheaterCommander.ShapeOrder(snapshot, kind);
                 notes = $"{pack.DisplayName} FSM → {kind}";
+                if (snapshot.TheaterRole != TheaterRole.None
+                    && !TheaterCommander.IsDeathRush(snapshot.DoctrineId))
+                    notes += $" theater={snapshot.TheaterRole}";
             }
 
             var (formation, stance) = MapPresentation(kind, pack.Id, assaultKind.HasValue);

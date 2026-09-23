@@ -88,6 +88,15 @@ namespace FactionTactics.Orders
                 }
             }
 
+            // 1.0.11 Theater: flank and harass step off the pin axis so packs do not stack.
+            // Death-Rush ignores the bias and keeps the bee-line.
+            if (runtime != null && !deathRush)
+            {
+                var lateral = TheaterCommander.LateralBias(runtime.TheaterRole);
+                if (lateral != 0f)
+                    formationOrigin += right * lateral;
+            }
+
 
             var fallbackIndex = 0;
             foreach (var member in squad.Members)

@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using FactionTactics.Doctrine;
 using FactionTactics.Orders;
+using UnityEngine;
 
 namespace FactionTactics.Squad
 {
@@ -34,5 +35,14 @@ namespace FactionTactics.Squad
 
         /// <summary>Offline/sim hook for nearest threat distance (meters).</summary>
         public float? DebugNearestThreatDistance { get; set; }
+
+        /// <summary>
+        /// Offline/sim hook: player id Theater Commander groups on.
+        /// Unset means "no scripted focus" (live play scans the world).
+        /// </summary>
+        public long? DebugFocusPlayerId { get; set; }
+
+        /// <summary>World position of <see cref="DebugFocusPlayerId"/>. Defaults to the squad centroid when null.</summary>
+        public Vector3? DebugFocusPlayerPosition { get; set; }
     }
 }

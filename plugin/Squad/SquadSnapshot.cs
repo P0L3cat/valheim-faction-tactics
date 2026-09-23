@@ -117,6 +117,9 @@ namespace FactionTactics.Squad
         /// </summary>
         public float AgeSeconds { get; set; }
 
+        /// <summary>1.0.11 theater job for this tick. None unless two or more packs share a player.</summary>
+        public TheaterRole TheaterRole { get; set; }
+
         public int CountByRole(SquadRole role)
         {
             var key = role.ToString();

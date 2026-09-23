@@ -30,7 +30,7 @@ Next play feels like a classic RTS **from one unit's POV**. Packs act as units. 
 ## Mountain order (Nate lock 2026-09-22)
 
 1. **Pack-as-Unit** (1.0.9) — whole squad = one body  
-2. **Theater Commander** (1.0.11+) — multi-squad battle awareness  
+2. **Theater Commander** (1.0.11, shipped) — multi-squad battle awareness  
 3. **Doctrine Spectacle** — readable identity plays  
 4. **Pressure Economy** — threat that breathes with the player  
 5. **Living War** (1.0.13 / possible 1.1.0 rename by Nate) — integration polish
@@ -59,15 +59,19 @@ North star: every squad moves as **ONE BODY**.
 
 **Acceptance:** A 20–25 skeleton spawn forms one readable wall that jogs into slots together. Greydwarf pack orbits you as a ring-unit, not a huddle.
 
-### 1.0.10 — Ambush sticky dwell + Narvi suite ← this cook
+### 1.0.10 — Ambush sticky dwell + Narvi suite (SHIPPED)
 
 Sustained hysteresis breach for Ambush sticky player switching (`AmbushStickySwitchDwellSeconds` default 1.0s). Single-tick spikes do not steal sticky; invalid/dead/OOR still switches immediately. Narvi player-path + Pack-as-Unit edge tests merged green.
 
-**Note:** Theater Commander cook was still in flight on Bazzite at ship time — promoted to 1.0.11 so sticky dwell could land without blocking.
+### 1.0.11 — Theater Commander (SHIPPED)
 
-### 1.0.11 — Theater Commander
+When 2+ packs are within `TheaterCoEngageRadius` (48m) of the same player, assign complementary jobs instead of every pack freezing or bum-rushing:
 
-Multi-squad awareness: don't all freeze/huddle the same; assign complementary jobs (pin / flank / reserve); readable order dwell; no global brain dump.
+- Closest Roman or Viking **Pins** and keeps its cadence. If no line pack is present, the closest non-skirmisher pins.
+- One skirmish pack (Ambush, Steppe, Pack Hunters, Insect) **Harasses**: Kite inside the pocket, Flank to close from outside it.
+- Everyone else **Flanks**, and the applicator steps that body off the pin's axis.
+- **Death-Rush** counts toward the 2+ battle but is never given a job and never leaves Charge.
+- Jobs stick for `TheaterRoleDwellSeconds` (2.5s). A fresh assignment cannot steal Pin or Harass from a dwelling holder. Broken packs still Retreat.
 
 ### 1.0.12 — Doctrine Spectacle
 
