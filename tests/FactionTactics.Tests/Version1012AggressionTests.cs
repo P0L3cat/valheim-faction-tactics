@@ -146,6 +146,160 @@ namespace FactionTactics.Tests
         }
 
         [Fact]
+        public void Roman_flanker_FocusFire_releases_vanilla_Attack()
+        {
+            var roman = new RomanDoctrine();
+            var squad = new SquadUnit { SquadId = "roman-ff", Doctrine = roman, DebugNearestThreatDistance = 8f };
+            var id = 91011L;
+            squad.Members.Add(new SquadMemberView
+            {
+                InstanceId = id,
+                PrefabName = "Skeleton",
+                IsAlive = true,
+                AssignedRole = SquadRole.Flanker,
+                LooksLikeFlanker = true,
+                Position = Vector3.zero,
+            });
+            OrderApplicator.Intents.Clear();
+            new OrderApplicator().Apply(squad, new SquadOrder
+            {
+                OrderKind = DoctrineOrderKind.FocusFire,
+                Formation = FormationType.Skirmish,
+                Stance = StanceType.Aggressive,
+            }, new SquadRuntimeState { DoctrineId = "roman", LastThreatDistance = 8f });
+
+            Assert.True(OrderApplicator.TryGetIntent(id, out var intent));
+            Assert.True(intent.AllowVanillaChase);
+            Assert.False(intent.PreferKeepRange);
+            Assert.True(CombatAuthority.ShouldReleaseToVanilla(intent));
+            Assert.True(CombatAuthority.ShouldReleaseToVanillaUpdateAI(intent));
+        }
+
+        [Fact]
+        public void Ambush_FocusFire_in_contact_releases_vanilla_Attack()
+        {
+            var ambush = new AmbushDoctrine();
+            var squad = new SquadUnit { SquadId = "ambush-ff", Doctrine = ambush, DebugNearestThreatDistance = 4f };
+            var id = 91012L;
+            squad.Members.Add(new SquadMemberView
+            {
+                InstanceId = id,
+                PrefabName = "Greydwarf",
+                IsAlive = true,
+                AssignedRole = SquadRole.Flanker,
+                LooksLikeFlanker = true,
+                Position = Vector3.zero,
+            });
+            OrderApplicator.Intents.Clear();
+            new OrderApplicator().Apply(squad, new SquadOrder
+            {
+                OrderKind = DoctrineOrderKind.FocusFire,
+                Formation = FormationType.Orb,
+                Stance = StanceType.Aggressive,
+            }, new SquadRuntimeState { DoctrineId = "ambush", LastThreatDistance = 4f });
+
+            Assert.True(OrderApplicator.TryGetIntent(id, out var intent));
+            Assert.True(intent.AllowVanillaChase);
+            Assert.False(intent.PreferKeepRange);
+            Assert.True(CombatAuthority.ShouldReleaseToVanilla(intent));
+        }
+
+        [Fact]
+        public void Ambush_orbit_outside_contact_still_skips()
+        {
+            var ambush = new AmbushDoctrine();
+            var squad = new SquadUnit { SquadId = "ambush-orbit", Doctrine = ambush, DebugNearestThreatDistance = 30f };
+            var id = 91013L;
+            squad.Members.Add(new SquadMemberView
+            {
+                InstanceId = id,
+                PrefabName = "Greydwarf",
+                IsAlive = true,
+                AssignedRole = SquadRole.Flanker,
+                LooksLikeFlanker = true,
+                Position = Vector3.zero,
+            });
+            OrderApplicator.Intents.Clear();
+            new OrderApplicator().Apply(squad, new SquadOrder
+            {
+                OrderKind = DoctrineOrderKind.Flank,
+                Formation = FormationType.Orb,
+                Stance = StanceType.Aggressive,
+            }, new SquadRuntimeState { DoctrineId = "ambush", LastThreatDistance = 30f });
+
+            Assert.True(OrderApplicator.TryGetIntent(id, out var intent));
+            Assert.False(intent.AllowVanillaChase);
+            Assert.True(intent.PreferKeepRange);
+            Assert.True(CombatAuthority.ShouldSoleBrain(intent));
+            Assert.False(CombatAuthority.IsAttackReleaseOrder(intent.OrderKind));
+        }
+
+        [Fact]
+        public void NonAttack_FormUp_Advance_still_skips()
+        {
+            AssertNonAttackSkips(DoctrineOrderKind.Advance, FormationType.ShieldWall, RomanPhase.ApproachStandoff);
+        }
+
+        [Fact]
+        public void NonAttack_Hold_still_skips()
+        {
+            AssertNonAttackSkips(DoctrineOrderKind.Hold, FormationType.ShieldWall, RomanPhase.StandoffHold);
+        }
+
+        [Fact]
+        public void Soft_parade_Hold_closes_chase_no_Attack_release()
+        {
+            var roman = new RomanDoctrine();
+            var squad = new SquadUnit { SquadId = "roman-parade", Doctrine = roman, DebugNearestThreatDistance = 8f };
+            var id = 91014L;
+            squad.Members.Add(new SquadMemberView
+            {
+                InstanceId = id,
+                PrefabName = "Skeleton",
+                IsAlive = true,
+                AssignedRole = SquadRole.Front,
+                LooksLikeHeavy = true,
+                Position = Vector3.zero,
+            });
+            OrderApplicator.Intents.Clear();
+            new OrderApplicator().Apply(squad, new SquadOrder
+            {
+                OrderKind = DoctrineOrderKind.Hold,
+                Formation = FormationType.ShieldWall,
+                Stance = StanceType.Defensive,
+            }, new SquadRuntimeState
+            {
+                DoctrineId = "roman",
+                RomanPhase = RomanPhase.StandoffHold,
+                LastThreatDistance = 8f,
+            });
+
+            Assert.True(OrderApplicator.TryGetIntent(id, out var intent));
+            Assert.False(intent.AllowVanillaChase, "parade Hold must not soft-release Attack");
+            Assert.True(CombatAuthority.ShouldSoleBrain(intent));
+        }
+
+        [Fact]
+        public void DANGEROUS_Attack_gets_real_vanilla_UpdateAI()
+        {
+            Assert.True(CombatAuthority.IsAttackReleaseOrder(DoctrineOrderKind.Charge));
+            Assert.False(CombatAuthority.IsAttackReleaseOrder(DoctrineOrderKind.Hold));
+            Assert.False(CombatAuthority.IsAttackReleaseOrder(DoctrineOrderKind.Advance));
+            Assert.False(CombatAuthority.IsAttackReleaseOrder(DoctrineOrderKind.Flank));
+
+            var intent = new MemberIntent
+            {
+                OrderKind = DoctrineOrderKind.Charge,
+                AllowVanillaChase = true,
+            };
+            Assert.True(CombatAuthority.ShouldReleaseToVanillaUpdateAI(intent),
+                "DANGEROUS north star: Attack AllowVanillaChase must Prefix-release real vanilla UpdateAI");
+            Assert.True(CombatAuthority.ShouldAllowVanillaMoveTo(intent),
+                "MoveTo must not re-block Attack release");
+            Assert.False(CombatAuthority.ShouldSoleBrain(intent));
+        }
+
+        [Fact]
         public void Formation_Advance_without_AllowVanillaChase_stays_sole_brain()
         {
             var intent = new MemberIntent
@@ -235,6 +389,30 @@ namespace FactionTactics.Tests
             Assert.True(OrderApplicator.TryGetIntent(id, out var intent));
             Assert.True(intent.AllowVanillaChase);
             Assert.False(intent.HoldGround);
+        }
+
+        static void AssertNonAttackSkips(DoctrineOrderKind order, FormationType formation, RomanPhase phase)
+        {
+            Assert.False(CombatAuthority.IsAttackReleaseOrder(order));
+
+            var registry = DoctrinePackRegistry.CreateDefault();
+            var roman = registry.GetById("roman")!;
+            var squad = FakeSnapshots.MakeSquad(roman, 4, "Skeleton");
+            OrderApplicator.Intents.Clear();
+            new OrderApplicator().Apply(squad, new SquadOrder
+            {
+                OrderKind = order,
+                Formation = formation,
+                Stance = StanceType.Defensive,
+            }, new SquadRuntimeState { RomanPhase = phase, DoctrineId = "roman" });
+
+            Assert.NotEmpty(OrderApplicator.Intents);
+            foreach (var intent in OrderApplicator.Intents.Values)
+            {
+                Assert.False(intent.AllowVanillaChase,
+                    $"{order}/{phase} must stay FT sole-brain (no Attack release)");
+                Assert.True(CombatAuthority.ShouldSoleBrain(intent));
+            }
         }
     }
 }
