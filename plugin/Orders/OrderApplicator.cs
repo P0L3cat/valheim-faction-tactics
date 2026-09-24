@@ -284,7 +284,7 @@ namespace FactionTactics.Orders
                 }
                 else if (order.OrderKind == DoctrineOrderKind.Charge && !keepRange)
                 {
-                    var threat = TryGetThreatPosition(member, centroid);
+                    var threat = TryGetThreatPosition(member, centroid, squad);
                     if (threat.HasValue)
                         desired = threat.Value;
                 }
@@ -305,7 +305,7 @@ namespace FactionTactics.Orders
                     && !roman
                     && !viking)
                 {
-                    var threat = TryGetThreatPosition(member, centroid);
+                    var threat = TryGetThreatPosition(member, centroid, squad);
                     if (threat.HasValue)
                         desired = threat.Value;
                 }
@@ -376,6 +376,12 @@ namespace FactionTactics.Orders
 #endif
                 fallbackIndex++;
             }
+
+            // Post-1.0.12 hungrier: ceil(10% of N) always press/harass while engaged / Theater.
+            var enforceThreat = threatPos;
+            if (!enforceThreat.HasValue && squad.DebugThreatPosition.HasValue)
+                enforceThreat = squad.DebugThreatPosition;
+            AlwaysThreat.Enforce(squad, runtime, enforceThreat);
         }
 
 
@@ -668,11 +674,14 @@ namespace FactionTactics.Orders
         /// </summary>
         private static Vector3? TryGetSquadThreatPosition(SquadUnit squad, Vector3 centroid)
         {
+            if (squad.DebugThreatPosition.HasValue)
+                return squad.DebugThreatPosition.Value;
+
             foreach (var member in squad.Members)
             {
                 if (!member.IsAlive)
                     continue;
-                var t = TryGetThreatPosition(member, centroid);
+                var t = TryGetThreatPosition(member, centroid, squad);
                 if (t.HasValue)
                     return t;
             }
@@ -682,8 +691,10 @@ namespace FactionTactics.Orders
         /// <summary>
         /// Charge / FocusFire approach point: combat target if known, else nearest player, else null (keep slot).
         /// </summary>
-        private static Vector3? TryGetThreatPosition(SquadMemberView member, Vector3 centroid)
+        private static Vector3? TryGetThreatPosition(SquadMemberView member, Vector3 centroid, SquadUnit? squad = null)
         {
+            if (squad != null && squad.DebugThreatPosition.HasValue)
+                return squad.DebugThreatPosition.Value;
 #if VALHEIM_REFS
             try
             {

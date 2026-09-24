@@ -341,9 +341,25 @@ namespace FactionTactics.Tests
             float threatDistance,
             FormationType formation = FormationType.ShieldWall)
         {
-            var squad = new SquadUnit { SquadId = doctrineId + "-c", Doctrine = doctrine, DebugNearestThreatDistance = threatDistance };
+            var squad = new SquadUnit
+            {
+                SquadId = doctrineId + "-c",
+                Doctrine = doctrine,
+                DebugNearestThreatDistance = threatDistance,
+                DebugThreatCount = 1,
+            };
             var id = NextId();
+            // Front under test + filler flanker so AlwaysThreat ceil(10%) can press without peeling the pin.
             squad.Members.Add(Front(id, "Skeleton", SquadRole.Front, Vector3.zero));
+            squad.Members.Add(new SquadMemberView
+            {
+                InstanceId = NextId(),
+                PrefabName = "Skeleton",
+                IsAlive = true,
+                AssignedRole = SquadRole.Flanker,
+                LooksLikeFlanker = true,
+                Position = new Vector3(2f, 0f, 2f),
+            });
             var runtime = new SquadRuntimeState
             {
                 StableId = squad.SquadId,

@@ -247,20 +247,33 @@ namespace FactionTactics.Tests
         }
 
         [Fact]
-        public void Soft_parade_Hold_closes_chase_no_Attack_release()
+        public void Soft_parade_Hold_majority_no_Attack_release_but_ceil_10pct_presses()
         {
+            // Post-1.0.12 hungrier: ceil(10% of N) always-threat while engaged.
+            // Soft parade remains for the formation majority — not the whole squad.
             var roman = new RomanDoctrine();
-            var squad = new SquadUnit { SquadId = "roman-parade", Doctrine = roman, DebugNearestThreatDistance = 8f };
-            var id = 91014L;
-            squad.Members.Add(new SquadMemberView
+            var threat = new Vector3(12f, 0f, 0f);
+            var squad = new SquadUnit
             {
-                InstanceId = id,
-                PrefabName = "Skeleton",
-                IsAlive = true,
-                AssignedRole = SquadRole.Front,
-                LooksLikeHeavy = true,
-                Position = Vector3.zero,
-            });
+                SquadId = "roman-parade",
+                Doctrine = roman,
+                DebugNearestThreatDistance = 8f,
+                DebugThreatCount = 1,
+                DebugThreatPosition = threat,
+            };
+            for (int i = 0; i < 5; i++)
+            {
+                squad.Members.Add(new SquadMemberView
+                {
+                    InstanceId = 91014L + i,
+                    PrefabName = "Skeleton",
+                    IsAlive = true,
+                    AssignedRole = i == 0 ? SquadRole.Missile : SquadRole.Front,
+                    LooksLikeHeavy = i != 0,
+                    LooksLikeMissile = i == 0,
+                    Position = new Vector3(-4f - i * 2f, 0f, 0f),
+                });
+            }
             OrderApplicator.Intents.Clear();
             new OrderApplicator().Apply(squad, new SquadOrder
             {
@@ -274,9 +287,18 @@ namespace FactionTactics.Tests
                 LastThreatDistance = 8f,
             });
 
-            Assert.True(OrderApplicator.TryGetIntent(id, out var intent));
-            Assert.False(intent.AllowVanillaChase, "parade Hold must not soft-release Attack");
-            Assert.True(CombatAuthority.ShouldSoleBrain(intent));
+            var intents = squad.Members
+                .Select(m => { Assert.True(OrderApplicator.TryGetIntent(m.InstanceId, out var i)); return i; })
+                .ToList();
+            var threatN = AlwaysThreat.CountThreatElements(intents);
+            Assert.True(threatN >= AlwaysThreat.Required(5));
+            var parade = intents.Count(i => !AlwaysThreat.CountsAsThreatElement(i));
+            Assert.True(parade >= 3, "formation majority must stay sole-brain Hold parade");
+            foreach (var intent in intents.Where(i => !AlwaysThreat.CountsAsThreatElement(i)))
+            {
+                Assert.False(intent.AllowVanillaChase, "parade Hold majority must not soft-release Attack");
+                Assert.True(CombatAuthority.ShouldSoleBrain(intent));
+            }
         }
 
         [Fact]

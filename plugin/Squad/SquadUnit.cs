@@ -44,5 +44,11 @@ namespace FactionTactics.Squad
 
         /// <summary>World position of <see cref="DebugFocusPlayerId"/>. Defaults to the squad centroid when null.</summary>
         public Vector3? DebugFocusPlayerPosition { get; set; }
+
+        /// <summary>
+        /// Offline/sim hook: world threat position for OrderApplicator geometry
+        /// (Charge/FocusFire DesiredPosition) when VALHEIM_REFS world scans are unavailable.
+        /// </summary>
+        public Vector3? DebugThreatPosition { get; set; }
     }
 }

@@ -57,5 +57,12 @@ namespace FactionTactics.Doctrine
             var raw = Math.Max(1, squadCount / 4f) * RomanSkeletonFlanker;
             return Math.Max(1, (int)Math.Ceiling(raw));
         }
+
+        /// <summary>
+        /// Post-1.0.12 hungrier: ceil(10% of N) members must press or ranged-harass
+        /// while engaged / Theater. Delegates to <see cref="AlwaysThreat.Required"/>.
+        /// </summary>
+        public static int RequiredThreatElements(int squadCount)
+            => AlwaysThreat.Required(squadCount);
     }
 }
