@@ -1,8 +1,8 @@
 {
   "name": "FactionTactics_Client",
-  "version_number": "1.0.12",
+  "version_number": "1.0.13",
   "website_url": "https://github.com/P0L3cat/valheim-faction-tactics",
-  "description": "Client executor for Faction Tactics 1.0.12: Attack intents release vanilla MonsterAI.UpdateAI; formation stays FT. Requires matching Server 1.0.12.",
+  "description": "Client executor for Faction Tactics 1.0.13: always-threat ceil(10%) Attack/ranged harass while engaged; Attack intents release vanilla MonsterAI.UpdateAI. Requires matching Server 1.0.13.",
   "dependencies": [
     "denikson-BepInExPack_Valheim-5.4.2202"
   ]

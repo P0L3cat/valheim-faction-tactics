@@ -40,7 +40,7 @@ namespace FactionTactics.Tests
         [Fact]
         public void Product_and_schema_versions_are_1_0_5_v3()
         {
-            Assert.Equal("1.0.12", FtVersion.ProductVersion);
+            Assert.equal("1.0.13", FtVersion.ProductVersion);
             Assert.Equal(3, FtVersion.IntentSchemaVersion);
             Assert.Equal(IntentZdoCodec.SchemaVersion, FtVersion.IntentSchemaVersion);
         }
