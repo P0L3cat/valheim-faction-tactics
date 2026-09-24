@@ -75,7 +75,7 @@ When 2+ packs are within `TheaterCoEngageRadius` (48m) of the same player, assig
 
 ### 1.0.12 — Aggression / vanilla Attack release ← THIS PLATE
 
-Lethal Attack: `ReleaseToVanillaAttack` (Charge / true press) releases `MonsterAI.UpdateAI` (native chase/swings). `AllowVanillaChase` alone still means FT may close. Hungrier skeleton flankers, greydwarfs, and draugr presses. Formation/maneuver stay FT sole-brain. Theater Pin/Flank/Harass preserved. No spawn hikes.
+Lethal Attack: `AllowVanillaChase` on Charge / true press releases `MonsterAI.UpdateAI` (native chase/swings). Formation/maneuver keep the flag false. Hungrier skeleton flankers, greydwarfs, and draugr presses. Formation/maneuver stay FT sole-brain. Theater Pin/Flank/Harass preserved. No spawn hikes.
 
 ### 1.0.13 — Doctrine Spectacle
 

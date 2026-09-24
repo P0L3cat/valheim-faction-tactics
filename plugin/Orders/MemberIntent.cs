@@ -19,8 +19,9 @@ namespace FactionTactics.Orders
         public bool HoldGround { get; set; }
         public bool PreferRun { get; set; }
         /// <summary>
-        /// 1.0.12 Attack: release this frame to vanilla <c>MonsterAI.UpdateAI</c> (native chase/swings).
-        /// Formation/maneuver intents keep FT sole-brain when false. BaseAI.MoveTo also passes through when true.
+        /// 1.0.12 reinterpret: Attack (Charge / true press) → release this frame to vanilla
+        /// <c>MonsterAI.UpdateAI</c> (native chase/swings). When false, FT sole-brain
+        /// (formation / maneuver / Hold). Pre-1.0.12 this only meant "FT may close."
         /// </summary>
         public bool AllowVanillaChase { get; set; }
         /// <summary>Artillery jelly / kite: suppress melee chase into danger.</summary>

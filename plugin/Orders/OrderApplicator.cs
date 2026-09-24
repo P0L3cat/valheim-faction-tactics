@@ -182,37 +182,18 @@ namespace FactionTactics.Orders
                 if (jelly)
                     allowChase = false;
 
-                // 1.0.12 Roman skeleton Flankers: Flank / FocusFire / Charge → Attack (vanilla release).
-                // Missiles stay PreferKeepRange — PreferRanged must not soft-park flankers.
+                // 1.0.12 Roman skeleton Flankers on Charge → Attack release (Flank maneuver stays sole-brain).
                 if (roman && member.AssignedRole == SquadRole.Flanker && !isMissile
-                    && (order.OrderKind == DoctrineOrderKind.Flank
-                        || order.OrderKind == DoctrineOrderKind.FocusFire
-                        || order.OrderKind == DoctrineOrderKind.Charge))
+                    && order.OrderKind == DoctrineOrderKind.Charge)
                 {
                     allowChase = true;
                     keepRange = false;
                 }
 
-                // 1.0.12 Ambush: Charge always; Flank/FocusFire in contact → press (vanilla).
-                // Kite / outer orbit keep PreferKeepRange peel — hungrier only when designated to press.
+                // Ambush: AllowVanillaChase (Attack release) only on the rare Charge flash.
+                // Flank/Kite orbit stays PreferKeepRange / FT sole-brain.
                 if (ambush)
-                {
                     allowChase = order.OrderKind == DoctrineOrderKind.Charge;
-                    if (!allowChase
-                        && !isMissile
-                        && (order.OrderKind == DoctrineOrderKind.Flank
-                            || order.OrderKind == DoctrineOrderKind.FocusFire)
-                        && !float.IsNaN(distToThreat)
-                        && !float.IsInfinity(distToThreat))
-                    {
-                        var contactBand = System.Math.Max(GenericContactBand, AmbushDoctrine.EnvelopeFlashRange);
-                        if (distToThreat <= contactBand)
-                        {
-                            allowChase = true;
-                            keepRange = false;
-                        }
-                    }
-                }
 
                 // 1.0.12 Viking (draugr): Charge + PressContact / FocusFire melee → Attack.
                 if (viking && !isMissile && !jelly

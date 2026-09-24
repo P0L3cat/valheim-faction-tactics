@@ -40,7 +40,7 @@ namespace FactionTactics.Combat
 
         /// <summary>
         /// 1.0.12: when true, MonsterAI.UpdateAI Prefix must return true (do not Drive).
-        /// AllowVanillaChase means release to vanilla UpdateAI for that frame.
+        /// AllowVanillaChase reinterprets as Attack release for that frame.
         /// </summary>
         public static bool ShouldReleaseToVanilla(MemberIntent intent)
             => CombatAuthority.ShouldReleaseToVanilla(intent);

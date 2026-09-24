@@ -1,6 +1,6 @@
 # Faction Tactics
 
-**1.0.12 aggression plate:** server commander (`FactionTactics.dll`) + client executor (`FactionTactics.Client.dll`). When a mob is designated **Attack** (`ReleaseToVanillaAttack` on Charge / true press), FT **releases** that frame to vanilla `MonsterAI.UpdateAI` so chase/swings feel native. `AllowVanillaChase` still means FT may close — it does not release Prefix. Formation and maneuver stay FT sole-brain. Hungrier presses for Roman skeleton flankers, greydwarfs (Ambush), and draugr (Viking). Theater Pin/Flank/Harass from 1.0.11 still applies. Behavior-only (no extra spawns).
+**1.0.12 aggression plate:** server commander (`FactionTactics.dll`) + client executor (`FactionTactics.Client.dll`). When a mob is designated **Attack** (`AllowVanillaChase` on Charge / true press), FT **releases** that frame to vanilla `MonsterAI.UpdateAI` so chase/swings feel native. Formation and maneuver keep `AllowVanillaChase` false → FT sole-brain. Hungrier presses for Roman skeleton flankers, greydwarfs (Ambush), and draugr (Viking). Theater Pin/Flank/Harass from 1.0.11 still applies. Behavior-only (no extra spawns).
 
 ## Quick install (1.0.12)
 
