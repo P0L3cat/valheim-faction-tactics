@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Version>1.0.11</Version>
+    <Version>1.0.12</Version>
     <TargetFramework>net472</TargetFramework>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
@@ -64,6 +64,7 @@
     <Compile Include="..\plugin\Doctrine\SquadRole.cs" Link="Shared\SquadRole.cs" />
     <Compile Include="..\plugin\Util\FactionTacticsLog.cs" Link="Shared\FactionTacticsLog.cs" />
     <Compile Include="..\plugin\Util\ValheimIds.cs" Link="Shared\ValheimIds.cs" />
+    <Compile Include="..\plugin\Combat\CombatAuthority.cs" Link="Shared\CombatAuthority.cs" />
     <Compile Include="..\plugin\Combat\CombatDriver.cs" Link="Shared\CombatDriver.cs" />
     <Compile Include="..\plugin\Combat\CombatTuning.cs" Link="Shared\CombatTuning.cs" />
     <Compile Include="..\plugin\Ambience\DeathRushAudio.cs" Link="Shared\DeathRushAudio.cs" />

@@ -18,7 +18,10 @@ namespace FactionTactics.Orders
         public long? FocusTargetId { get; set; }
         public bool HoldGround { get; set; }
         public bool PreferRun { get; set; }
-        /// <summary>0.2: FT may close on threat (Charge/hot assault). Does <b>not</b> run vanilla UpdateAI.</summary>
+        /// <summary>
+        /// 1.0.12 Attack: release this frame to vanilla <c>MonsterAI.UpdateAI</c> (native chase/swings).
+        /// Formation/maneuver intents keep FT sole-brain when false. BaseAI.MoveTo also passes through when true.
+        /// </summary>
         public bool AllowVanillaChase { get; set; }
         /// <summary>Artillery jelly / kite: suppress melee chase into danger.</summary>
         public bool PreferKeepRange { get; set; }

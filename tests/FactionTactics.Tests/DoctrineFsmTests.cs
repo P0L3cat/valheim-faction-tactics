@@ -56,13 +56,15 @@ namespace FactionTactics.Tests
             holdLine.PreviousOrderKind = nameof(DoctrineOrderKind.Advance);
             Assert.Equal(DoctrineOrderKind.Hold, cmd.Propose(holdLine)!.OrderKind);
 
-            // PreferRanged default: inside charge band with no missiles → still Hold (no default Charge)
+            // 1.0.12: PreferRanged only blocks Charge while missiles live.
+            // No missiles + inside charge band → Charge (lethal Attack), not parade Hold.
             var close = FakeSnapshots.WithThreat(
                 FakeSnapshots.WithCombatRoles(FakeSnapshots.Base("roman", 4), front: 3, missile: 0, flanker: 0, leader: 1),
                 3f);
             close.PreviousOrderKind = nameof(DoctrineOrderKind.Hold);
             close.CasualtyRatio = 0.1f;
-            Assert.Equal(DoctrineOrderKind.Hold, cmd.Propose(close)!.OrderKind);
+            close.RomanPhase = RomanPhase.ContactHold;
+            Assert.Equal(DoctrineOrderKind.Charge, cmd.Propose(close)!.OrderKind);
 
             // Last-resort casualties → Charge allowed under PreferRanged
             var lastResort = FakeSnapshots.WithThreat(

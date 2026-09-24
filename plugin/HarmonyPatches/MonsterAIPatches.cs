@@ -38,9 +38,9 @@ namespace FactionTactics.HarmonyPatches
 
 #if VALHEIM_REFS
     /// <summary>
-    /// 0.2.1 Prefix: when <see cref="MemberIntent"/> exists, skip vanilla MonsterAI.UpdateAI
-    /// entirely and drive MoveTo / StopMoving / LookAt / DoAttack from FT.
-    /// No intent → return true (vanilla brain). Ownership/discovery stay outside this patch.
+    /// Prefix: when <see cref="MemberIntent"/> exists and AllowVanillaChase is false, skip vanilla
+    /// UpdateAI and drive MoveTo / StopMoving / LookAt / DoAttack from FT.
+    /// AllowVanillaChase (Attack) → return true (vanilla chase/swings). No intent → vanilla.
     /// </summary>
     [HarmonyPatch(typeof(MonsterAI))]
     public static class MonsterAI_UpdateAI_Patch
@@ -85,9 +85,13 @@ namespace FactionTactics.HarmonyPatches
             if (!IntentZdoSync.IsNetOwner(__instance))
                 return true;
 
+            // 1.0.12: AllowVanillaChase (Attack) → release vanilla UpdateAI.
+            if (CombatAuthority.ShouldReleaseToVanilla(intent))
+                return true;
+
             CombatDriver.Drive(__instance, intent, dt);
             OwnerDriveCount++;
-            return false; // FT sole brain on owning peer — skip vanilla UpdateAI
+            return false; // FT sole brain — formation / maneuver
         }
 
         /// <summary>
@@ -690,7 +694,7 @@ namespace FactionTactics.HarmonyPatches
     /// Prefix on protected <c>BaseAI.MoveTo</c>: belt-and-suspenders when intent owns the AI
     /// (UpdateAI Prefix already skips vanilla; this catches other MoveTo callers).
     /// HoldGround → skip MoveTo + StopMoving. Line Front / PreferKeepRange → rewrite point → slot.
-    /// AllowVanillaChase under 0.2 means FT may close — not "run vanilla UpdateAI."
+    /// AllowVanillaChase (1.0.12 Attack) → pass through to vanilla MoveTo.
     /// </summary>
     [HarmonyPatch(typeof(BaseAI), "MoveTo")]
     public static class BaseAI_MoveTo_Patch
@@ -704,7 +708,7 @@ namespace FactionTactics.HarmonyPatches
             if (!MonsterAI_UpdateAI_Patch.TryResolveIntent(mai, out var intent))
                 return true;
 
-            if (intent.AllowVanillaChase)
+            if (CombatAuthority.ShouldAllowVanillaMoveTo(intent))
                 return true;
 
             if (intent.HoldGround)

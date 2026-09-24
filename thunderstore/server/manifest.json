@@ -1,8 +1,8 @@
 {
   "name": "FactionTactics_Server",
-  "version_number": "1.0.11",
+  "version_number": "1.0.12",
   "website_url": "https://github.com/P0L3cat/valheim-faction-tactics",
-  "description": "Server commander for Faction Tactics 1.0.11: Theater Pin/Flank/Harass across packs. Pair with Client 1.0.11. Behavior-only (no extra spawns).",
+  "description": "Server commander for Faction Tactics 1.0.12: Attack releases vanilla UpdateAI; hungrier skeleton flankers, greydwarfs, draugr. Pair with Client 1.0.12. Behavior-only (no extra spawns).",
   "dependencies": [
     "denikson-BepInExPack_Valheim-5.4.2202"
   ]

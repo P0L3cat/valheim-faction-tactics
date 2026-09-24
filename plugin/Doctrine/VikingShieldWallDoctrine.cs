@@ -15,9 +15,9 @@ namespace FactionTactics.Doctrine
     {
         public const float StandoffDistance = 14f;
         public const float IndoorsStandoff = 12f;
-        public const float DefaultSwingRange = 3.5f;
+        public const float DefaultSwingRange = 4.0f;
         public const float StandoffHoldMin = 1f;
-        public const float StandoffHoldMax = 8f;
+        public const float StandoffHoldMax = 6f;
         public const float RetreatPauseSeconds = 1f;
         public override string Id => "viking-shieldwall";
         public override string DisplayName => "VikingShieldWall";
@@ -70,8 +70,20 @@ namespace FactionTactics.Doctrine
                 return DoctrineOrderKind.RetreatAndReform;
 
             _ = previous;
-            BandedCadence.Step(snapshot, LiveProfile(snapshot.IndoorsOrCrypt));
-            return BandedCadence.OrderFor(snapshot.RomanPhase);
+            var profile = LiveProfile(snapshot.IndoorsOrCrypt);
+            BandedCadence.Step(snapshot, profile);
+            var order = BandedCadence.OrderFor(snapshot.RomanPhase);
+
+            // 1.0.12: inside swing band on ContactHold/PressContact → Charge (vanilla Attack).
+            var d = BandedCadence.BandDistance(snapshot);
+            var pressBand = profile.SwingRange * AggressionWeights.ForVikingDraugr();
+            if ((snapshot.RomanPhase == RomanPhase.ContactHold
+                 || snapshot.RomanPhase == RomanPhase.PressContact)
+                && d <= pressBand
+                && !snapshot.IsBroken)
+                return DoctrineOrderKind.Charge;
+
+            return order;
         }
 
         /// <summary>Open field uses <see cref="StandoffDistance"/>; crypts clamp toward <see cref="IndoorsStandoff"/>.</summary>
@@ -83,6 +95,8 @@ namespace FactionTactics.Doctrine
             var swing = PluginConfig.VikingContactSwingRange?.Value ?? DefaultSwingRange;
             var min = PluginConfig.VikingStandoffHoldMin?.Value ?? StandoffHoldMin;
             var max = PluginConfig.VikingStandoffHoldMax?.Value ?? StandoffHoldMax;
+            // 1.0.12 draugr overall aggression: shorten standoff hold (score/weight cadence, not spawns).
+            max = Math.Max(min, max / AggressionWeights.VikingDraugr);
             var pause = PluginConfig.VikingRetreatPauseSeconds?.Value ?? RetreatPauseSeconds;
             return CadenceProfile.Resolve(standoff, swing, min, max, pause);
         }

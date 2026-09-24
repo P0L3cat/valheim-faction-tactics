@@ -1,8 +1,8 @@
 # Faction Tactics
 
-**1.0.11 hybrid:** server commander (`FactionTactics.dll`) + client executor (`FactionTactics.Client.dll`). When two or more packs share a player, Theater Commander assigns **Pin / Flank / Harass** (Roman and Viking lean Pin, Ambush leans Flank or Harass, Death-Rush stays on Charge). Jobs stick for `TheaterRoleDwellSeconds` (default 2.5s) inside `TheaterCoEngageRadius` (default 48m). Ambush sticky player switching still requires a sustained hysteresis breach (`AmbushStickySwitchDwellSeconds`, default 1s). HoldGround is rare. Romans advance to a ~20m standoff, hold 1–15s, press until the front line is in swing range, then hold; if the player opens the gap they pause 1s and press again. Vikings use the same cadence on a tighter ~12–15m line. Advance never pins HoldGround just for standing on a slot. Ambush and Death-Rush do not plant. Phase A swing gate and Phase B dwell stay.
+**1.0.12 aggression plate:** server commander (`FactionTactics.dll`) + client executor (`FactionTactics.Client.dll`). When a mob is designated **Attack** (`ReleaseToVanillaAttack` on Charge / true press), FT **releases** that frame to vanilla `MonsterAI.UpdateAI` so chase/swings feel native. `AllowVanillaChase` still means FT may close — it does not release Prefix. Formation and maneuver stay FT sole-brain. Hungrier presses for Roman skeleton flankers, greydwarfs (Ambush), and draugr (Viking). Theater Pin/Flank/Harass from 1.0.11 still applies. Behavior-only (no extra spawns).
 
-## Quick install (1.0.11)
+## Quick install (1.0.12)
 
 Admin console: `ft help` / `ft set <key> <value>` on dedicated, listen-host, **or client F5 as admin** (RPC to dedicated — see `docs/CONSOLE-KNOBS.md`). Cadence knobs: `RomanStandoffDistance`, `RomanStandoffHoldMin`, `RomanStandoffHoldMax`, `RomanContactSwingRange`, `RomanRetreatPauseSeconds`, and the matching `Viking*` keys.
 

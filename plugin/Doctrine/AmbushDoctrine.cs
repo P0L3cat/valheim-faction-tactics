@@ -9,8 +9,8 @@ namespace FactionTactics.Doctrine
     /// <summary>
     /// Greydwarf* → Black Forest Ambush predators.
     /// Guerrilla encircle: Orb/Skirmish orbit + Kite/Flank harassment.
-    /// Refuse mass Charge (blob bum-rush); flash on isolate, stagger, or
-    /// FlankOpportunity, else kite in contact. After Charge → force Kite, then re-encircle.
+    /// Hungrier 1.0.12: flash more readily on isolate/stagger/FlankOpportunity;
+    /// Flank-press in contact when not flashing; still refuse mindless blob Charge. After Charge → force Kite, then re-encircle.
     /// Phase B: scored transitions + hysteresis. Post-Charge Kite bypasses min dwell.
     /// </summary>
     public sealed class AmbushDoctrine : DoctrinePackBase
@@ -43,16 +43,16 @@ namespace FactionTactics.Doctrine
         static float ReEncircleGapLive => PluginConfig.AmbushReEncircleGap?.Value ?? ReEncircleGap;
 
         /// <summary>Rare envelope flash: nearest must be inside this.</summary>
-        public const float EnvelopeFlashRange = 5f;
+        public const float EnvelopeFlashRange = 6.5f;
 
         /// <summary>Minimum seconds on Flank before any non-isolate flash.</summary>
-        public const float MinFlankAgeForFlash = 3f;
+        public const float MinFlankAgeForFlash = 1.5f;
 
         /// <summary>Anxiety break → Kite / Hold.</summary>
         public const float AnxietyCasualties = 0.22f;
 
         /// <summary>Envelope flash requires casualty ratio below this.</summary>
-        public const float EnvelopeMaxCasualties = 0.12f;
+        public const float EnvelopeMaxCasualties = 0.18f;
 
         public override bool MatchesPrefab(string prefabName)
         {
@@ -148,6 +148,7 @@ namespace FactionTactics.Doctrine
                 scores[DoctrineOrderKind.Hold] = 0.3f;
                 scores[DoctrineOrderKind.Charge] = -8f;
                 OrderTransition.SoftenEdge(scores, DoctrineOrderKind.Flank, DoctrineOrderKind.Kite, d, reGap);
+                ApplyAggressionBump(scores);
                 return scores;
             }
 
@@ -170,6 +171,7 @@ namespace FactionTactics.Doctrine
                 scores[DoctrineOrderKind.Flank] = 0.4f;
                 scores[DoctrineOrderKind.Charge] = -8f;
                 OrderTransition.SoftenEdge(scores, DoctrineOrderKind.Hold, DoctrineOrderKind.Kite, d, outer);
+                ApplyAggressionBump(scores);
                 return scores;
             }
 
@@ -212,26 +214,43 @@ namespace FactionTactics.Doctrine
                 scores[DoctrineOrderKind.Hold] = 0.25f;
                 scores[DoctrineOrderKind.Charge] = -8f;
                 OrderTransition.SoftenEdge(scores, DoctrineOrderKind.Flank, DoctrineOrderKind.Kite, d, inner);
+                ApplyAggressionBump(scores);
                 return scores;
             }
 
             // Contact: flash on isolate / stagger / flank opportunity, otherwise kite.
             if (ShouldCommitFlash(snapshot, previous))
             {
-                scores[DoctrineOrderKind.Charge] = 3.2f;
-                scores[DoctrineOrderKind.Kite] = 1.3f;
-                scores[DoctrineOrderKind.Flank] = 1.05f;
+                scores[DoctrineOrderKind.Charge] = 3.6f;
+                scores[DoctrineOrderKind.Kite] = 1.15f;
+                scores[DoctrineOrderKind.Flank] = 1.2f;
                 scores[DoctrineOrderKind.Hold] = -4f;
             }
             else
             {
-                scores[DoctrineOrderKind.Kite] = d < EnvelopeFlashRange ? 2.9f : 2.75f;
-                scores[DoctrineOrderKind.Flank] = 1.25f;
+                // Hungrier: prefer Flank-press utility in contact (score bump); orbit still FT sole-brain.
+                scores[DoctrineOrderKind.Flank] = 2.85f;
+                scores[DoctrineOrderKind.Kite] = 2.1f;
                 scores[DoctrineOrderKind.Hold] = -4f;
-                scores[DoctrineOrderKind.Charge] = -8f;
+                scores[DoctrineOrderKind.Charge] = -3.5f; // softer veto than pre-1.0.12
             }
 
+            ApplyAggressionBump(scores);
             return scores;
+        }
+
+        /// <summary>1.0.12 greydwarf overall aggression: raise Flank/Charge utilities (not spawn rates).</summary>
+        internal static void ApplyAggressionBump(Dictionary<DoctrineOrderKind, float> scores)
+        {
+            if (scores == null)
+                return;
+            var w = AggressionWeights.AmbushGreydwarf;
+            if (w <= 1.0001f)
+                return;
+            if (scores.TryGetValue(DoctrineOrderKind.Flank, out var flank) && flank > 0f)
+                scores[DoctrineOrderKind.Flank] = flank * w;
+            if (scores.TryGetValue(DoctrineOrderKind.Charge, out var charge) && charge > 0f)
+                scores[DoctrineOrderKind.Charge] = charge * w;
         }
 
         /// <summary>

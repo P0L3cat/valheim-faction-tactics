@@ -1,6 +1,6 @@
 # Faction Tactics — RTS POV Roadmap (BIG strides)
 
-**Date:** 2026-09-22 (America/Chicago)  
+**Date:** 2026-09-23 (America/Chicago)  
 **Owners:** Nate (playtest / promote), Groknir (plate / deploy)  
 **Status:** Nate locked mountain order — Pack-as-Unit first, then Theater Commander.  
 **Ship rule:** Cooks commit + test + Release DLLs. Parent plates GH / Thunderstore / GPortal. No cook-side deploy.
@@ -33,7 +33,7 @@ Next play feels like a classic RTS **from one unit's POV**. Packs act as units. 
 2. **Theater Commander** (1.0.11, shipped) — multi-squad battle awareness  
 3. **Doctrine Spectacle** — readable identity plays  
 4. **Pressure Economy** — threat that breathes with the player  
-5. **Living War** (1.0.13 / possible 1.1.0 rename by Nate) — integration polish
+5. **Living War** (1.0.15 / possible 1.1.0 rename by Nate) — integration polish
 
 Do **not** rename to 1.1.0 without Nate.
 
@@ -73,17 +73,21 @@ When 2+ packs are within `TheaterCoEngageRadius` (48m) of the same player, assig
 - **Death-Rush** counts toward the 2+ battle but is never given a job and never leaves Charge.
 - Jobs stick for `TheaterRoleDwellSeconds` (2.5s). A fresh assignment cannot steal Pin or Harass from a dwelling holder. Broken packs still Retreat.
 
-### 1.0.12 — Doctrine Spectacle
+### 1.0.12 — Aggression / vanilla Attack release ← THIS PLATE
+
+Lethal Attack: `ReleaseToVanillaAttack` (Charge / true press) releases `MonsterAI.UpdateAI` (native chase/swings). `AllowVanillaChase` alone still means FT may close. Hungrier skeleton flankers, greydwarfs, and draugr presses. Formation/maneuver stay FT sole-brain. Theater Pin/Flank/Harass preserved. No spawn hikes.
+
+### 1.0.13 — Doctrine Spectacle
 
 Each doctrine's "set piece" is unmistakable: Roman line press, Ambush orbit tempo (phase angle advances), Viking choke mirror, DeathRush bee-line. Facing / keep-distance polish so formations *read*.
 
-### 1.0.13 — Pressure Economy
+### 1.0.14 — Pressure Economy
 
 Contact pressure that feels like an RTS engagement: Approach→Press as one unit; Ambush kite→re-encircle without huddle; breathe with player positioning; no spawn hikes.
 
-### 1.0.14 — Living War (ship candidate)
+### 1.0.15 — Living War (ship candidate)
 
-Integration polish, regress tests for 8–13, knob defaults tuned for RTS POV, changelog/README ready for possible Nate rename to 1.1.0 (cook leaves version at 1.0.14).
+Integration polish, regress tests for 8–14, knob defaults tuned for RTS POV, changelog/README ready for possible Nate rename to 1.1.0 (cook leaves version at 1.0.15).
 
 ---
 

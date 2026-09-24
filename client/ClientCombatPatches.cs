@@ -42,11 +42,15 @@ namespace FactionTactics.Client
                 return true; // no FT intent → vanilla
             }
 
+            // 1.0.12: Attack → release vanilla UpdateAI (native chase/swings). Formation stays FT.
+            if (CombatAuthority.ShouldReleaseToVanillaUpdateAI(intent))
+                return true;
+
             CombatDriver.Drive(__instance, intent, dt);
             DriveHits++;
             if (fromRpc)
                 RpcDriveHits++;
-            return false; // sole brain on owner
+            return false; // sole brain on owner (maneuver / formation)
         }
     }
 
@@ -65,7 +69,7 @@ namespace FactionTactics.Client
             if (!IntentRpcSync.TryGetFromMonsterAI(mai, now, out var intent)
                 && !IntentZdoSync.TryReadFromMonsterAI(mai, now, out intent))
                 return true;
-            if (intent.AllowVanillaChase)
+            if (CombatAuthority.ShouldAllowVanillaMoveTo(intent))
                 return true;
             if (intent.HoldGround)
             {

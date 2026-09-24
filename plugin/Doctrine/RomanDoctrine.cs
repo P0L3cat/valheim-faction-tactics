@@ -33,10 +33,10 @@ namespace FactionTactics.Doctrine
         public const float RetreatPauseSeconds = 1f;
 
         /// <summary>Tight band once a rare Charge is committed (meters).</summary>
-        public const float ChargeCommitBand = 5f;
+        public const float ChargeCommitBand = 6.5f;
 
         /// <summary>Casualty ratio treated as last-resort melee commit.</summary>
-        public const float LastResortCasualtyRatio = 0.35f;
+        public const float LastResortCasualtyRatio = 0.28f;
 
         public override string Id => "roman";
         public override string DisplayName => "Roman";
@@ -60,7 +60,8 @@ namespace FactionTactics.Doctrine
                 return SquadRole.Leader;
 
             var flankerCount = squad.Count(m => m.AssignedRole == SquadRole.Flanker);
-            var targetFlankers = Math.Max(1, squad.Count / 4);
+            // 1.0.12: skeleton flanker aggression weight raises flanker quota (score/weight, not spawns).
+            var targetFlankers = AggressionWeights.RomanTargetFlankers(squad.Count);
             if (!member.LooksLikeHeavy && flankerCount < targetFlankers && member.LooksLikeFlanker)
                 return SquadRole.Flanker;
 
@@ -147,12 +148,11 @@ namespace FactionTactics.Doctrine
             // Last resort: morale crumbling but not yet fully broken.
             var lastResort = snapshot.CasualtyRatio >= LastResortCasualtyRatio;
 
-            // PreferRanged: never default Charge — Hold/ProtectMissiles/FocusFire primacy
-            // even when missiles are gone. Charge only on last-resort casualties.
-            if (preferRanged)
+            // PreferRanged: while missiles live, Charge only last-resort.
+            // When missiles are gone, PreferRanged must not block flanker/melee Attack commits.
+            if (preferRanged && hasMissiles)
                 return lastResort;
 
-            // PreferRanged off: melee commit when inside band and no missiles (or last resort).
             return !hasMissiles || lastResort;
         }
 

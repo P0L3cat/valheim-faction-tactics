@@ -161,13 +161,14 @@ namespace FactionTactics.Tests
             flash.FlankOpportunity = true;
             Assert.Equal(DoctrineOrderKind.Charge, cmd.Propose(flash)!.OrderKind);
 
-            var kite = FakeSnapshots.WithThreat(FakeSnapshots.Ambush(), 6f);
-            kite.PreviousOrderKind = nameof(DoctrineOrderKind.Flank);
-            kite.AgeSeconds = 0.5f;
-            kite.TargetIsolated = false;
-            kite.ThreatStaggeredOrLow = false;
-            kite.FlankOpportunity = false;
-            Assert.Equal(DoctrineOrderKind.Kite, cmd.Propose(kite)!.OrderKind);
+            var press = FakeSnapshots.WithThreat(FakeSnapshots.Ambush(), 6f);
+            press.PreviousOrderKind = nameof(DoctrineOrderKind.Flank);
+            press.AgeSeconds = 0.5f;
+            press.TargetIsolated = false;
+            press.ThreatStaggeredOrLow = false;
+            press.FlankOpportunity = false;
+            // 1.0.12 hungrier: Flank-press in contact when flash window closed (not soft Kite).
+            Assert.Equal(DoctrineOrderKind.Flank, cmd.Propose(press)!.OrderKind);
 
             var firstContact = FakeSnapshots.WithThreat(FakeSnapshots.Ambush(), 6f);
             firstContact.FlankOpportunity = true;

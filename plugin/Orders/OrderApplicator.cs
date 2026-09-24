@@ -182,10 +182,47 @@ namespace FactionTactics.Orders
                 if (jelly)
                     allowChase = false;
 
-                // Ambush doctrine: AllowVanillaChase only on the rare Charge flash.
-                // Flank/Kite/FocusFire/ProtectMissiles keep PreferKeepRange and no chase.
+                // 1.0.12 Roman skeleton Flankers: Flank / FocusFire / Charge → Attack (vanilla release).
+                // Missiles stay PreferKeepRange — PreferRanged must not soft-park flankers.
+                if (roman && member.AssignedRole == SquadRole.Flanker && !isMissile
+                    && (order.OrderKind == DoctrineOrderKind.Flank
+                        || order.OrderKind == DoctrineOrderKind.FocusFire
+                        || order.OrderKind == DoctrineOrderKind.Charge))
+                {
+                    allowChase = true;
+                    keepRange = false;
+                }
+
+                // 1.0.12 Ambush: Charge always; Flank/FocusFire in contact → press (vanilla).
+                // Kite / outer orbit keep PreferKeepRange peel — hungrier only when designated to press.
                 if (ambush)
+                {
                     allowChase = order.OrderKind == DoctrineOrderKind.Charge;
+                    if (!allowChase
+                        && !isMissile
+                        && (order.OrderKind == DoctrineOrderKind.Flank
+                            || order.OrderKind == DoctrineOrderKind.FocusFire)
+                        && !float.IsNaN(distToThreat)
+                        && !float.IsInfinity(distToThreat))
+                    {
+                        var contactBand = System.Math.Max(GenericContactBand, AmbushDoctrine.EnvelopeFlashRange);
+                        if (distToThreat <= contactBand)
+                        {
+                            allowChase = true;
+                            keepRange = false;
+                        }
+                    }
+                }
+
+                // 1.0.12 Viking (draugr): Charge + PressContact / FocusFire melee → Attack.
+                if (viking && !isMissile && !jelly
+                    && (order.OrderKind == DoctrineOrderKind.Charge
+                        || order.OrderKind == DoctrineOrderKind.FocusFire
+                        || cadencePhase == RomanPhase.PressContact))
+                {
+                    allowChase = true;
+                    keepRange = false;
+                }
 
                 // Death-Rush (Meadows Greyling): bee-line Charge — never HoldGround / PreferKeepRange / kite.
                 if (deathRush)
@@ -236,8 +273,14 @@ namespace FactionTactics.Orders
                 if (movingCadence && !isWallBreaker && !isCavalry)
                 {
                     desired = slot + anchorShift;
-                    if (isFrontLine && !isMissile)
+                    // ApproachStandoff: keep line closed. PressContact: release melee Attack (lethal).
+                    if (isFrontLine && !isMissile && cadencePhase == RomanPhase.ApproachStandoff)
                         allowChase = false;
+                    if (cadencePhase == RomanPhase.PressContact && !isMissile)
+                    {
+                        allowChase = true;
+                        keepRange = false;
+                    }
                 }
                 else if (order.OrderKind == DoctrineOrderKind.Charge && !keepRange)
                 {
@@ -252,7 +295,10 @@ namespace FactionTactics.Orders
                              || order.OrderKind == DoctrineOrderKind.FocusFire))
                 {
                     desired = slot;
-                    allowChase = false;
+                    // 1.0.12: FocusFire / PressContact keep Attack; parade Hold/Advance still close chase.
+                    if (order.OrderKind != DoctrineOrderKind.FocusFire
+                        && cadencePhase != RomanPhase.PressContact)
+                        allowChase = false;
                 }
                 else if (!keepRange
                     && order.OrderKind == DoctrineOrderKind.FocusFire
@@ -300,6 +346,7 @@ namespace FactionTactics.Orders
                 }
 
 
+                // 1.0.12: AllowVanillaChase (Attack) releases vanilla UpdateAI — native chase/swings.
                 var intent = new MemberIntent
                 {
                     SquadId = squad.SquadId,
